@@ -17,7 +17,8 @@ class TimelineScreen extends StatefulWidget {
 
 class _TimelineScreenState extends State<TimelineScreen> {
   DateTime selectedDate = DateTime.now();
-  static const List<String> _defaultCategories = [
+  static const List<String> _protectedCategories = ['Sleep'];
+  static const List<String> _initialCategories = [
     'Sleep',
     'Work',
     'Exercise',
@@ -26,7 +27,22 @@ class _TimelineScreenState extends State<TimelineScreen> {
     'Hobby',
     'Other'
   ];
-  List<String> _categories = List.from(_defaultCategories);
+  List<String> _categories = List.from(_initialCategories);
+  Map<String, List<String>> _subCategories = {}; // parent -> list of subs
+
+  List<String> _flattenCats() {
+    // Use a set to guarantee uniqueness and avoid duplicate Dropdown items
+    final flatSet = <String>{};
+    for (final parent in _categories) {
+      flatSet.add(parent);
+      final subs = _subCategories[parent] ?? [];
+      for (final s in subs) {
+        flatSet.add('$parent / $s');
+      }
+    }
+    return flatSet.toList();
+  }
+
   TimeOfDay? wakeTime;
   TimeOfDay? sleepTime;
   final ScrollController _scrollController = ScrollController();
@@ -140,6 +156,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
           sleepTime = _parseTime(sleepTxt);
           wakeTime = _parseTime(wakeTxt);
           _categories = List<String>.from(data['customCategories'] ?? []);
+          _subCategories = (data['subCategories'] as Map<String, dynamic>? ?? {})
+              .map((k, v) => MapEntry(k, List<String>.from(v as List)));
           _dedupCats();
           // ensure 'Sleep' is always present
           if (!_categories.contains('Sleep')) {
@@ -160,7 +178,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         setState(() {
           _sleepTimeController.text = '23:00';
           _wakeTimeController.text = '7:00';
-          _categories = List.from(_defaultCategories);
+          _categories = List.from(_initialCategories);
           _dedupCats();
         });
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
@@ -451,27 +469,82 @@ class _TimelineScreenState extends State<TimelineScreen> {
                       const Text('Categories', style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       Container(
-                        constraints: const BoxConstraints(maxHeight: 200),
+                        constraints: const BoxConstraints(maxHeight: 300),
                         child: ListView.builder(
                           shrinkWrap: true,
                           itemCount: _categories.length,
                           itemBuilder: (context, index) {
-                            final cat = _categories[index];
-                            return ListTile(
-                              dense: true,
-                              title: Text(cat),
-                              trailing: _defaultCategories.contains(cat)
+                            final parent = _categories[index];
+                            final subs = _subCategories[parent] ?? [];
+                            final isDefault = _protectedCategories.contains(parent);
+                            final TextEditingController subCtrl = TextEditingController();
+                            return ExpansionTile(
+                              title: Text(parent),
+                              trailing: isDefault
                                   ? null
                                   : IconButton(
                                       icon: const Icon(Icons.delete),
                                       onPressed: () async {
                                         setDialogState(() {
-                                          _categories.remove(cat);
+                                          _categories.remove(parent);
+                                          _subCategories.remove(parent);
                                           _dedupCats();
                                         });
                                         await _saveSettings();
                                       },
                                     ),
+                              children: [
+                                ...subs.map((s) => Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.subdirectory_arrow_right, size: 16),
+                                          const SizedBox(width: 8),
+                                          Expanded(child: Text(s)),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete, size: 18),
+                                            onPressed: () async {
+                                              await _removeSubCategory(parent, s);
+                                              setDialogState(() {});
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    )),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextField(
+                                          controller: subCtrl,
+                                          decoration: const InputDecoration(
+                                            hintText: 'Add sub-category',
+                                            isDense: true,
+                                          ),
+                                          onSubmitted: (val) async {
+                                            final v=val.trim();
+                                            if(v.isEmpty) return;
+                                            await _addSubCategory(parent, v);
+                                            subCtrl.clear();
+                                            setDialogState(() {});
+                                          },
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.add),
+                                        onPressed: () async {
+                                          final v=subCtrl.text.trim();
+                                          if(v.isEmpty) return;
+                                          await _addSubCategory(parent, v);
+                                          subCtrl.clear();
+                                          setDialogState(() {});
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             );
                           },
                         ),
@@ -556,6 +629,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         'sleepTime': _sleepTimeController.text,
         'wakeTime': _wakeTimeController.text,
         'customCategories': _categories,
+        'subCategories': _subCategories,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -656,15 +730,29 @@ class _TimelineScreenState extends State<TimelineScreen> {
       controller.selection = TextSelection.collapsed(offset: controller.text.length);
     }
 
+    // Pre-compute flattened categories once to avoid redundant work and help with value validation
+    final availableCategories = _flattenCats();
+    // If the entry.category is no longer present in the available list (e.g. the sub-category was deleted),
+    // fall back to null so that DropdownButton does not throw an assertion.
+    final String? dropdownValue =
+        (entry.category.isNotEmpty && availableCategories.contains(entry.category))
+            ? entry.category
+            : null;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DropdownButton<String>(
-            value: entry.category.isEmpty ? null : entry.category,
+            value: dropdownValue,
             hint: const Text('Select category'),
-            items: _categories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat))).toList(),
+            items: availableCategories
+                .map((category) => DropdownMenuItem(
+                      value: category,
+                      child: Text(category),
+                    ))
+                .toList(),
             onChanged: (val) {
               if (val != null) _updateEntry(entry, val, entry.notes);
             },
@@ -696,7 +784,40 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   Future<void> _setDayComplete(bool val) async{
     final uid=FirebaseAuth.instance.currentUser?.uid; if(uid==null) return;
-    await getFirestore().collection('daily_logs').doc(uid).collection('logs').doc(_dateStr(selectedDate)).set({'complete':val,'date':_dateStr(selectedDate),'lastUpdated':FieldValue.serverTimestamp()});
+    final ref=getFirestore().collection('daily_logs').doc(uid).collection('logs').doc(_dateStr(selectedDate));
+    if(val){
+      await ref.set({'date':_dateStr(selectedDate),'lastUpdated':FieldValue.serverTimestamp()});
+    }else{
+      await ref.delete();
+    }
     setState(()=>_dayComplete=val);
+  }
+
+  // ---------- Sub-category helpers ----------
+  Future<void> _addSubCategory(String parent, String sub) async {
+    if (sub.trim().isEmpty) return;
+    if (!_categories.contains(parent)) {
+      _categories.add(parent);
+    }
+    final list = _subCategories[parent] ?? <String>[];
+    if (!list.contains(sub)) {
+      list.add(sub);
+      _subCategories[parent] = list;
+      await _saveSettings();
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _removeSubCategory(String parent, String sub) async {
+    final list = _subCategories[parent];
+    if (list == null) return;
+    list.remove(sub);
+    if (list.isEmpty) {
+      _subCategories.remove(parent);
+    } else {
+      _subCategories[parent] = list;
+    }
+    await _saveSettings();
+    if (mounted) setState(() {});
   }
 } 

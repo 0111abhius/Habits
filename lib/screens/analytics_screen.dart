@@ -106,7 +106,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         .collection('daily_logs')
         .doc(user.uid)
         .collection('logs')
-        .where('complete', isEqualTo: true)
         .where('date', isGreaterThanOrEqualTo: dateFormat.format(start))
         .where('date', isLessThanOrEqualTo: dateFormat.format(end))
         .get();
@@ -333,14 +332,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
                   return ListView(
                     children: [
-                      ...sorted.map((e) => ListTile(
-                            title: Text(e.key),
-                            subtitle: LinearProgressIndicator(
-                              value: e.value / totalHours,
-                              minHeight: 6,
-                            ),
-                            trailing: Text('${e.value.toStringAsFixed(1)} h/day'),
-                          )),
+                      ..._buildCategoryTiles(sorted, totalHours),
                       ListTile(
                         title: const Text('Days logged in range'),
                         trailing: Text('${data.days}'),
@@ -410,5 +402,52 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
       ],
     );
+  }
+
+  List<Widget> _buildCategoryTiles(List<MapEntry<String, double>> sorted, double totalHours) {
+    // group by parent
+    final Map<String, double> parentTotals = {};
+    final Map<String, Map<String,double>> childMap = {};
+    for (final entry in sorted) {
+      final parts = entry.key.split(' / ');
+      final parent = parts.first;
+      final isChild = parts.length > 1;
+      parentTotals[parent] = (parentTotals[parent] ?? 0) + entry.value;
+      if (isChild) {
+        final child = parts[1];
+        final map = childMap[parent] ?? {};
+        map[child] = entry.value;
+        childMap[parent] = map;
+      }
+    }
+
+    final parentEntries = parentTotals.entries.toList()
+      ..sort((a,b)=>b.value.compareTo(a.value));
+
+    List<Widget> tiles=[];
+    for (final p in parentEntries) {
+      final children = childMap[p.key];
+      if (children==null || children.isEmpty) {
+        tiles.add(ListTile(
+          title: Text(p.key),
+          subtitle: LinearProgressIndicator(value:p.value/totalHours,minHeight:6),
+          trailing: Text('${p.value.toStringAsFixed(1)} h/day'),
+        ));
+      } else {
+        final childList = children.entries.toList()
+          ..sort((a,b)=>b.value.compareTo(a.value));
+        tiles.add(ExpansionTile(
+          title: Row(
+            children:[Expanded(child:Text(p.key)),Text('${p.value.toStringAsFixed(1)} h/day')],
+          ),
+          children: childList.map((c)=>ListTile(
+            title: Text(c.key),
+            subtitle: LinearProgressIndicator(value:c.value/totalHours,minHeight:4),
+            trailing: Text('${c.value.toStringAsFixed(1)} h/day'),
+          )).toList(),
+        ));
+      }
+    }
+    return tiles;
   }
 } 
