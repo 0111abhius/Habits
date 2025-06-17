@@ -56,6 +56,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
   Set<int> _splitHours = {}; // hours that have a 30-minute split for the selected date
 
   bool _dayComplete = false;
+  bool _habitsExpanded = true;
 
   @override
   void initState() {
@@ -275,7 +276,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
             value: _dayComplete,
             onChanged: (val){if(val!=null) _setDayComplete(val);},
           ),
-          HabitTracker(date: selectedDate),
+          ExpansionTile(
+            title: const Text('Habits'),
+            initiallyExpanded: _habitsExpanded,
+            maintainState: true,
+            onExpansionChanged: (expanded) {
+              setState(() => _habitsExpanded = expanded);
+            },
+            children: [
+              HabitTracker(date: selectedDate),
+            ],
+          ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: getFirestore()
