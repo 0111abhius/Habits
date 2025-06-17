@@ -24,9 +24,9 @@ class _CalendarStripState extends State<CalendarStrip> {
     super.initState();
     _scrollController = ScrollController();
     final today = DateTime.now();
-    // Generate dates for past 7 days plus today
-    dates = List.generate(8, (index) {
-      return today.subtract(Duration(days: 7 - index));
+    // Generate dates: past 7, today, next 7 (total 15)
+    dates = List.generate(15, (i) {
+      return today.subtract(Duration(days: 7 - i)); // i=7 => today
     });
 
     // Scroll to today's date when the widget is first built
