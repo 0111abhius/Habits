@@ -6,6 +6,7 @@ import 'screens/home_screen.dart';
 import 'screens/timeline_screen.dart';
 import 'screens/habits_screen.dart';
 import 'screens/analytics_screen.dart';
+import 'screens/template_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 FirebaseFirestore? _testFirestore;
@@ -67,6 +68,7 @@ class MyApp extends StatelessWidget {
         '/timeline': (context) => const TimelineScreen(),
         '/habits': (context) => const HabitsScreen(),
         '/analytics': (context) => const AnalyticsScreen(),
+        '/template': (context) => const TemplateScreen(),
       },
     );
   }

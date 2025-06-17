@@ -73,6 +73,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   bool _dayComplete = false;
   bool _habitsExpanded = true;
+  final Set<String> _templateAppliedDates = {}; // yyyy-MM-dd strings
 
   @override
   void initState() {
@@ -286,6 +287,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 case 'habits':
                   Navigator.pushNamed(context, '/habits');
                   break;
+                case 'template':
+                  Navigator.pushNamed(context, '/template');
+                  break;
               }
             },
             itemBuilder: (context) => [
@@ -308,6 +312,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 child: ListTile(
                   leading: const Icon(Icons.check_circle_outline),
                   title: const Text('Habits'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'template',
+                child: ListTile(
+                  leading: const Icon(Icons.content_copy),
+                  title: const Text('Template'),
                 ),
               ),
             ],
@@ -373,6 +384,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     .where((e) => e.startTime.minute == 30)
                     .map((e) => e.startTime.hour)
                     .toSet();
+
+                // Apply template once if needed
+                _applyTemplateIfNeeded(entries);
 
                 // Autofill sleep blocks only for today or future; leave past dates untouched
                 final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
@@ -894,5 +908,66 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
     await _saveSettings();
     if (mounted) setState(() {});
+  }
+
+  Future<void> _applyTemplateIfNeeded(List<TimelineEntry> currentEntries) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final dateStr = _dateStr(selectedDate);
+    // Only today or future
+    final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    if (selectedDate.isBefore(today)) return;
+    if (_templateAppliedDates.contains(dateStr)) return;
+    if (_dayComplete) return; // don't overwrite completed day
+
+    // fetch template docs
+    final snap = await getFirestore()
+        .collection('template_entries')
+        .doc(uid)
+        .collection('entries')
+        .get();
+    if (snap.docs.isEmpty) {
+      return; // no template yet
+    }
+
+    final Map<String, TimelineEntry> existingMap = {
+      for (var e in currentEntries) _noteKey(e.startTime.hour, e.startTime.minute): e
+    };
+
+    final batch = getFirestore().batch();
+    final entriesColl = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
+
+    for (final doc in snap.docs) {
+      final hour = int.parse(doc.id.substring(0, 2));
+      final minute = int.parse(doc.id.substring(2));
+      final key = _noteKey(hour, minute);
+      final tmplCat = doc['category'] ?? '';
+      final tmplNotes = doc['notes'] ?? '';
+
+      if (existingMap.containsKey(key)) {
+        final existing = existingMap[key]!;
+        if (existing.category.isEmpty) {
+          batch.update(entriesColl.doc(existing.id), {
+            'category': tmplCat,
+            'notes': tmplNotes,
+          });
+        }
+        continue;
+      }
+
+      final start = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute);
+      final newEntry = TimelineEntry(
+        id: _docId(start),
+        userId: uid,
+        date: selectedDate,
+        startTime: start,
+        endTime: start.add(Duration(minutes: minute == 0 ? 60 : 30)),
+        category: tmplCat,
+        notes: tmplNotes,
+      );
+      batch.set(entriesColl.doc(newEntry.id), newEntry.toMap());
+    }
+    await batch.commit();
+    _templateAppliedDates.add(dateStr);
   }
 } 
