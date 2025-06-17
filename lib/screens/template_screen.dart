@@ -69,6 +69,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
         date: DateTime(2000),
         startTime: start,
         endTime: start.add(Duration(minutes: minute == 0 ? 60 : 30)),
+        planCategory: data['planCategory'] ?? data['category'] ?? '',
+        planNotes: data['planNotes'] ?? data['notes'] ?? '',
         category: data['category'] ?? '',
         notes: data['notes'] ?? '',
       );
@@ -90,6 +92,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
         .collection('entries')
         .doc(entry.id)
         .set({
+      'planCategory': entry.planCategory,
+      'planNotes': entry.planNotes,
       'category': entry.category,
       'notes': entry.notes,
     });
@@ -116,6 +120,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
         date: DateTime(2000),
         startTime: start,
         endTime: start.add(const Duration(minutes: 30)),
+        planCategory: '',
+        planNotes: '',
         category: '',
         notes: '',
       );
@@ -134,6 +140,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
       date: DateTime(2000),
       startTime: DateTime(2000,1,1,hour,minute),
       endTime: DateTime(2000,1,1,hour,minute).add(Duration(minutes: minute==0?60:30)),
+      planCategory: '',
+      planNotes: '',
       category: '',
       notes: '',
     );
@@ -148,7 +156,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DropdownButton<String>(
-            value: entry.category.isEmpty ? null : entry.category,
+            value: entry.planCategory.isEmpty ? null : entry.planCategory,
             hint: const Text('Select category'),
             items: _flattenCats().map((c)=>DropdownMenuItem(value:c,child:Text(c))).toList(),
             onChanged: (val) async {
@@ -159,6 +167,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 date: entry.date,
                 startTime: entry.startTime,
                 endTime: entry.endTime,
+                planCategory: val,
+                planNotes: entry.planNotes,
                 category: val,
                 notes: entry.notes,
               );
@@ -258,11 +268,18 @@ class _TemplateScreenState extends State<TemplateScreen> {
           date: DateTime(2000),
           startTime: start,
           endTime: start.add(const Duration(hours: 1)),
+          planCategory: 'Sleep',
+          planNotes: '',
           category: 'Sleep',
           notes: '',
         );
         _entries[id] = entry;
-        batch.set(coll.doc(id), {'category': 'Sleep', 'notes': ''});
+        batch.set(coll.doc(id), {
+          'planCategory': 'Sleep',
+          'planNotes': '',
+          'category': 'Sleep',
+          'notes': '',
+        });
       }
     }
     await batch.commit();

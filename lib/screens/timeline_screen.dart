@@ -73,6 +73,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   bool _dayComplete = false;
   bool _habitsExpanded = true;
+  bool _showRetro = false;
 
   @override
   void initState() {
@@ -269,6 +270,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
         title: const Text('Timeline'),
         actions: [
           IconButton(
+            icon: Icon(_showRetro ? Icons.visibility : Icons.visibility_off),
+            tooltip: _showRetro ? 'Hide Retro' : 'Show Retro',
+            onPressed: () => setState(() => _showRetro = !_showRetro),
+          ),
+          IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Analytics',
             onPressed: () => Navigator.pushNamed(context, '/analytics'),
@@ -463,7 +469,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  Future<void> _updateEntry(TimelineEntry entry, String category, String notes) async {
+  Future<void> _updateEntry(TimelineEntry entry, String category, String notes, {bool isPlan=false}) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -473,18 +479,21 @@ class _TimelineScreenState extends State<TimelineScreen> {
           .doc(user.uid)
           .collection('entries');
 
-      final updatedEntry = TimelineEntry(
-        id: '',
+      final docId = _docId(entry.startTime);
+
+      final fullEntry = TimelineEntry(
+        id: docId,
         userId: user.uid,
         date: entry.date,
         startTime: entry.startTime,
         endTime: entry.endTime,
-        category: category,
-        notes: notes,
+        planCategory: isPlan ? category : entry.planCategory,
+        planNotes: isPlan ? notes : entry.planNotes,
+        category: isPlan ? category : category,
+        notes: isPlan ? notes : notes,
       );
 
-      final docId = _docId(updatedEntry.startTime);
-      await entriesColl.doc(docId).set(updatedEntry.toMap(), SetOptions(merge: true));
+      await entriesColl.doc(docId).set(fullEntry.toMap());
     } catch (e) {
       final messenger = ScaffoldMessenger.maybeOf(context);
       messenger?.showSnackBar(
@@ -828,37 +837,60 @@ class _TimelineScreenState extends State<TimelineScreen> {
             ? entry.category
             : null;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    final planNoteCtrl = _noteControllers.putIfAbsent('p_'+key, ()=> TextEditingController(text: entry.planNotes));
+    if(planNoteCtrl.text!=entry.planNotes && !_noteDebouncers.containsKey('p_'+key)){
+      planNoteCtrl.text=entry.planNotes;
+      planNoteCtrl.selection=TextSelection.collapsed(offset:planNoteCtrl.text.length);
+    }
+
+    final retroNoteCtrl = controller; // existing
+
+    Widget planColumn = Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        children:[
           DropdownButton<String>(
-            value: dropdownValue,
-            hint: const Text('Select category'),
-            items: availableCategories
-                .map((category) => DropdownMenuItem(
-                      value: category,
-                      child: Text(category),
-                    ))
-                .toList(),
-            onChanged: (val) {
-              if (val != null) _updateEntry(entry, val, entry.notes);
-            },
+            value: entry.planCategory.isEmpty?null:entry.planCategory,
+            hint: const Text('Plan'),
+            items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(c))).toList(),
+            onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.planNotes,isPlan:true);},
           ),
           TextField(
-            controller: controller,
-            maxLines: null,
-            decoration: const InputDecoration(hintText: 'Add notes...', border: InputBorder.none),
-            onChanged: (val) {
-              _noteDebouncers[key]?.cancel();
-              _noteDebouncers[key] = Timer(const Duration(milliseconds: 500), () {
-                _updateEntry(entry, entry.category, val);
-                _noteDebouncers.remove(key);
-              });
+            controller: planNoteCtrl,
+            maxLines:null,
+            decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
+            onChanged:(val){
+              _noteDebouncers['p_'+key]?.cancel();
+              _noteDebouncers['p_'+key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.planCategory, val,isPlan:true);_noteDebouncers.remove('p_'+key);});
             },
           ),
-        ],
+        ]));
+
+    Widget retroColumn = Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children:[
+          DropdownButton<String>(
+            value: dropdownValue,
+            hint: const Text('Retro'),
+            items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(c))).toList(),
+            onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.notes);},
+          ),
+          TextField(
+            controller: retroNoteCtrl,
+            maxLines:null,
+            decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
+            onChanged:(val){
+              _noteDebouncers[key]?.cancel();
+              _noteDebouncers[key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.category, val);_noteDebouncers.remove(key);});
+            },
+          ),
+        ]));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal:16,vertical:4),
+      child: Row(
+        children: [planColumn, if(_showRetro) const SizedBox(width:8), if(_showRetro) retroColumn],
       ),
     );
   }
@@ -940,17 +972,19 @@ class _TimelineScreenState extends State<TimelineScreen> {
       final hour = int.parse(doc.id.substring(0, 2));
       final minute = int.parse(doc.id.substring(2));
       final key = _noteKey(hour, minute);
-      final tmplCat = doc['category'] ?? '';
-      final tmplNotes = doc['notes'] ?? '';
+      final tmplPlanCat = doc['planCategory'] ?? doc['category'] ?? '';
+      final tmplPlanNotes = doc['planNotes'] ?? doc['notes'] ?? '';
+      final tmplRetroCat = doc['category'] ?? tmplPlanCat;
+      final tmplRetroNotes = doc['notes'] ?? tmplPlanNotes;
 
       if (existingMap.containsKey(key)) {
         final existing = existingMap[key]!;
+        final Map<String,dynamic> upd={};
+        if (existing.planCategory.isEmpty) {
+          upd['planCategory']=tmplPlanCat; upd['planNotes']=tmplPlanNotes; }
         if (existing.category.isEmpty) {
-          batch.update(entriesColl.doc(existing.id), {
-            'category': tmplCat,
-            'notes': tmplNotes,
-          });
-        }
+          upd['category']=tmplRetroCat; upd['notes']=tmplRetroNotes; }
+        if(upd.isNotEmpty){batch.update(entriesColl.doc(existing.id),upd);}        
         continue;
       }
 
@@ -961,8 +995,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
         date: selectedDate,
         startTime: start,
         endTime: start.add(Duration(minutes: minute == 0 ? 60 : 30)),
-        category: tmplCat,
-        notes: tmplNotes,
+        planCategory: tmplPlanCat,
+        planNotes: tmplPlanNotes,
+        category: tmplRetroCat,
+        notes: tmplRetroNotes,
       );
       batch.set(entriesColl.doc(newEntry.id), newEntry.toMap());
     }

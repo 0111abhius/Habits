@@ -6,6 +6,8 @@ class TimelineEntry {
   final DateTime date;
   final DateTime startTime;
   final DateTime endTime;
+  final String planCategory;
+  final String planNotes;
   final String category;
   final String notes;
 
@@ -15,6 +17,8 @@ class TimelineEntry {
     required this.date,
     required this.startTime,
     required this.endTime,
+    this.planCategory = '',
+    this.planNotes = '',
     required this.category,
     required this.notes,
   });
@@ -26,6 +30,8 @@ class TimelineEntry {
       'hour': startTime.hour,
       'startTime': Timestamp.fromDate(startTime),
       'endTime': Timestamp.fromDate(endTime),
+      'planCategory': planCategory,
+      'planNotes': planNotes,
       'category': category,
       'notes': notes,
     };
@@ -48,6 +54,8 @@ class TimelineEntry {
       date: parseDateField(data['date']),
       startTime: (data['startTime'] as Timestamp?)?.toDate() ?? DateTime.now(),
       endTime: (data['endTime'] as Timestamp?)?.toDate() ?? DateTime.now().add(const Duration(hours: 1)),
+      planCategory: data['planCategory'] as String? ?? '',
+      planNotes: data['planNotes'] as String? ?? '',
       category: data['category'] as String? ?? '',
       notes: data['notes'] as String? ?? '',
     );
