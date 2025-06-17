@@ -1005,9 +1005,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
       if (existingMap.containsKey(key)) {
         final existing = existingMap[key]!;
         final Map<String,dynamic> upd={};
-        if (existing.planCategory.isEmpty) {
+        if(existing.planCategory.isEmpty){
           upd['planCategory']=tmplPlanCat; upd['planNotes']=tmplPlanNotes; }
-        if (existing.category.isEmpty) {
+        if(existing.category.isEmpty){
           upd['category']=tmplRetroCat; upd['notes']=tmplRetroNotes; }
         if(upd.isNotEmpty){batch.update(entriesColl.doc(existing.id),upd);}        
         continue;

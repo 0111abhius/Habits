@@ -18,6 +18,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   Map<String, TimelineEntry> _entries = {};
   Set<int> _splitHours = {};
   final Map<String, TextEditingController> _noteCtrls = {};
+  bool _pushing=false;
 
   // Categories helpers (reuse minimal copy from timeline)
   static const List<String> _initialCategories = [
@@ -228,6 +229,11 @@ class _TemplateScreenState extends State<TemplateScreen> {
           );
         },
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _pushing?null:_pushTemplateToFuture,
+        icon: const Icon(Icons.send),
+        label: _pushing?const Text('Pushing...'):const Text('Push to future'),
+      ),
     );
   }
 
@@ -284,5 +290,52 @@ class _TemplateScreenState extends State<TemplateScreen> {
     }
     await batch.commit();
     if (mounted) setState(() {});
+  }
+
+  Future<void> _pushTemplateToFuture() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid; if(uid==null) return;
+    setState(()=>_pushing=true);
+    try{
+      // fetch template docs once
+      final tmplSnap = await getFirestore().collection('template_entries').doc(uid).collection('entries').get();
+      if(tmplSnap.docs.isEmpty){
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Template is empty')));
+        return;
+      }
+
+      final now = DateTime.now();
+      const int daysAhead=30;
+      for(int d=1; d<=daysAhead; d++){
+        final date = now.add(Duration(days:d));
+        final dateStr = '${date.year.toString().padLeft(4,'0')}-${date.month.toString().padLeft(2,'0')}-${date.day.toString().padLeft(2,'0')}';
+        final entriesColl = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
+
+        WriteBatch batch = getFirestore().batch();
+        for(final doc in tmplSnap.docs){
+          final hour=int.parse(doc.id.substring(0,2));
+          final minute=int.parse(doc.id.substring(2));
+          final start = DateTime(date.year,date.month,date.day,hour,minute);
+          final id = DateFormat('yyyyMMdd_HHmm').format(start);
+          final data=doc.data();
+          batch.set(entriesColl.doc(id),{
+            'userId':uid,
+            'date':dateStr,
+            'hour':hour,
+            'startTime':Timestamp.fromDate(start),
+            'endTime':Timestamp.fromDate(start.add(Duration(minutes:minute==0?60:30))),
+            'planCategory':data['planCategory'] ?? data['category'] ?? '',
+            'planNotes':data['planNotes'] ?? data['notes'] ?? '',
+            'category':data['category'] ?? '',
+            'notes':data['notes'] ?? '',
+          });
+        }
+        await batch.commit();
+      }
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Template applied to future days')));
+    }catch(e){
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Failed to push template')));
+    }finally{
+      if(mounted) setState(()=>_pushing=false);
+    }
   }
 } 
