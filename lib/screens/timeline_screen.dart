@@ -75,6 +75,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
   bool _habitsExpanded = true;
   bool _showRetro = false;
 
+  Color _planBg(BuildContext context) => Color.alphaBlend(Colors.indigo.withOpacity(0.04), Theme.of(context).colorScheme.surface);
+  Color _retroBg(BuildContext context) => Color.alphaBlend(Colors.orange.withOpacity(0.04), Theme.of(context).colorScheme.surface);
+
   @override
   void initState() {
     super.initState();
@@ -443,14 +446,20 @@ class _TimelineScreenState extends State<TimelineScreen> {
                           )
                         : null;
 
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    final bool isSleepRow = entry00.category == 'Sleep';
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal:8,vertical:3),
+                      decoration: BoxDecoration(
+                        color: isSleepRow ? Colors.blueGrey.withOpacity(0.04) : Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius:4, offset: Offset(0,2))],
+                      ),
                       child: Column(
                         children: [
                           ListTile(
-                            title: Text('${hour.toString().padLeft(2, '0')}:00'),
+                            title: Text('${hour.toString().padLeft(2, '0')}:00', style: Theme.of(context).textTheme.titleSmall),
                             trailing: IconButton(
-                              icon: Icon(_splitHours.contains(hour) ? Icons.call_merge : Icons.call_split),
+                              icon: Icon(_splitHours.contains(hour) ? Icons.remove : Icons.call_split, color: Theme.of(context).colorScheme.primary),
                               onPressed: () => _toggleSplit(hour),
                             ),
                           ),
@@ -846,51 +855,67 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final retroNoteCtrl = controller; // existing
 
     Widget planColumn = Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children:[
-          DropdownButton<String>(
-            value: entry.planCategory.isEmpty?null:entry.planCategory,
-            hint: const Text('Plan'),
-            items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(c))).toList(),
-            onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.planNotes,isPlan:true);},
-          ),
-          TextField(
-            controller: planNoteCtrl,
-            maxLines:null,
-            decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
-            onChanged:(val){
-              _noteDebouncers['p_'+key]?.cancel();
-              _noteDebouncers['p_'+key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.planCategory, val,isPlan:true);_noteDebouncers.remove('p_'+key);});
-            },
-          ),
-        ]));
+      child: Container(
+        decoration: BoxDecoration(
+          color: _planBg(context),
+          borderRadius: _showRetro
+              ? const BorderRadius.only(topLeft: Radius.circular(8), bottomLeft: Radius.circular(8))
+              : BorderRadius.circular(8),
+        ),
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children:[
+            DropdownButton<String>(
+              value: entry.planCategory.isEmpty?null:entry.planCategory,
+              hint: const Text('Plan'),
+              items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(c))).toList(),
+              onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.planNotes,isPlan:true);},
+            ),
+            TextField(
+              controller: planNoteCtrl,
+              maxLines:null,
+              decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
+              onChanged:(val){
+                _noteDebouncers['p_'+key]?.cancel();
+                _noteDebouncers['p_'+key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.planCategory, val,isPlan:true);_noteDebouncers.remove('p_'+key);});
+              },
+            ),
+          ]),
+        ));
 
     Widget retroColumn = Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children:[
-          DropdownButton<String>(
-            value: dropdownValue,
-            hint: const Text('Retro'),
-            items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(c))).toList(),
-            onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.notes);},
-          ),
-          TextField(
-            controller: retroNoteCtrl,
-            maxLines:null,
-            decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
-            onChanged:(val){
-              _noteDebouncers[key]?.cancel();
-              _noteDebouncers[key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.category, val);_noteDebouncers.remove(key);});
-            },
-          ),
-        ]));
+      child: Container(
+        decoration: BoxDecoration(
+          color: _retroBg(context),
+          borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)),
+        ),
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children:[
+            DropdownButton<String>(
+              value: dropdownValue,
+              hint: const Text('Retro'),
+              items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(c))).toList(),
+              onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.notes);},
+            ),
+            TextField(
+              controller: retroNoteCtrl,
+              maxLines:null,
+              decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
+              onChanged:(val){
+                _noteDebouncers[key]?.cancel();
+                _noteDebouncers[key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.category, val);_noteDebouncers.remove(key);});
+              },
+            ),
+          ]),
+        ));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal:16,vertical:4),
       child: Row(
-        children: [planColumn, if(_showRetro) const SizedBox(width:8), if(_showRetro) retroColumn],
+        children: [planColumn, if(_showRetro) const SizedBox(width:2), if(_showRetro) retroColumn],
       ),
     );
   }
