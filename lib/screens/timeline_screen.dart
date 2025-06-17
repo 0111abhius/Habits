@@ -247,8 +247,48 @@ class _TimelineScreenState extends State<TimelineScreen> {
         title: const Text('Timeline'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => _showSettingsDialog(context),
+            icon: const Icon(Icons.bar_chart),
+            tooltip: 'Analytics',
+            onPressed: () => Navigator.pushNamed(context, '/analytics'),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Customize',
+            onSelected: (value) async {
+              switch (value) {
+                case 'sleep':
+                  _showSleepDialog(context);
+                  break;
+                case 'categories':
+                  _showCategoriesDialog(context);
+                  break;
+                case 'habits':
+                  Navigator.pushNamed(context, '/habits');
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'sleep',
+                child: ListTile(
+                  leading: const Icon(Icons.bedtime),
+                  title: const Text('Sleep timings'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'categories',
+                child: ListTile(
+                  leading: const Icon(Icons.label),
+                  title: const Text('Categories'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'habits',
+                child: ListTile(
+                  leading: const Icon(Icons.check_circle_outline),
+                  title: const Text('Habits'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -415,9 +455,74 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
   }
 
-  Future<void> _showSettingsDialog(BuildContext context) async {
-    TimeOfDay? dialogSleep = sleepTime ?? (_sleepTimeController.text.isNotEmpty ? _parseTime(_sleepTimeController.text) : null);
-    TimeOfDay? dialogWake = wakeTime ?? (_wakeTimeController.text.isNotEmpty ? _parseTime(_wakeTimeController.text) : null);
+  Future<void> _showSleepDialog(BuildContext context) async {
+    TimeOfDay? dialogSleep = sleepTime ?? (_sleepTimeController.text.isNotEmpty ? _parseTime(_sleepTimeController.text) : const TimeOfDay(hour: 23, minute: 0));
+    TimeOfDay? dialogWake = wakeTime ?? (_wakeTimeController.text.isNotEmpty ? _parseTime(_wakeTimeController.text) : const TimeOfDay(hour: 7, minute: 0));
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Sleep Timings'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Sleep Time'),
+                      TextButton(
+                        onPressed: () async {
+                          final t = await showTimePicker(
+                            context: context,
+                            initialTime: dialogSleep ?? const TimeOfDay(hour: 23, minute: 0),
+                          );
+                          if (t != null) {
+                            setDialogState(() => dialogSleep = t);
+                            _sleepTimeController.text = _fmt24(t);
+                            await _saveSettings();
+                          }
+                        },
+                        child: Text(dialogSleep?.format(context) ?? 'Set'),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Wake Time'),
+                      TextButton(
+                        onPressed: () async {
+                          final t = await showTimePicker(
+                            context: context,
+                            initialTime: dialogWake ?? const TimeOfDay(hour: 7, minute: 0),
+                          );
+                          if (t != null) {
+                            setDialogState(() => dialogWake = t);
+                            _wakeTimeController.text = _fmt24(t);
+                            await _saveSettings();
+                          }
+                        },
+                        child: Text(dialogWake?.format(context) ?? 'Set'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showCategoriesDialog(BuildContext context) async {
     final TextEditingController addCatController = TextEditingController();
 
     await showDialog(
@@ -434,50 +539,31 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      const Text('Categories', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 16),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Sleep Time'),
-                          TextButton(
+                          Expanded(
+                            child: TextField(
+                              controller: addCatController,
+                              decoration: const InputDecoration(labelText: 'Add category'),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.add),
                             onPressed: () async {
-                              final t = await showTimePicker(
-                                context: context,
-                                initialTime: dialogSleep ?? const TimeOfDay(hour: 23, minute: 0),
-                              );
-                              if (t != null) {
-                                setDialogState(() => dialogSleep = t);
-                                _sleepTimeController.text = _fmt24(t);
-                                await _saveSettings();
-                              }
+                              final newCat = addCatController.text.trim();
+                              if (newCat.isEmpty) return;
+                              setDialogState(() {
+                                _categories.add(newCat);
+                                _dedupCats();
+                              });
+                              addCatController.clear();
+                              await _saveSettings();
                             },
-                            child: Text(dialogSleep?.format(context) ?? 'Set Time'),
                           ),
                         ],
                       ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Wake Time'),
-                          TextButton(
-                            onPressed: () async {
-                              final t = await showTimePicker(
-                                context: context,
-                                initialTime: dialogWake ?? const TimeOfDay(hour: 7, minute: 0),
-                              );
-                              if (t != null) {
-                                setDialogState(() => dialogWake = t);
-                                _wakeTimeController.text = _fmt24(t);
-                                await _saveSettings();
-                              }
-                            },
-                            child: Text(dialogWake?.format(context) ?? 'Set Time'),
-                          ),
-                        ],
-                      ),
-                      const Divider(),
-                      const Text('Categories', style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       Container(
                         constraints: const BoxConstraints(maxHeight: 300),
@@ -508,12 +594,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                 ...subs.map((s) => Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
                                       child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          const Icon(Icons.subdirectory_arrow_right, size: 16),
-                                          const SizedBox(width: 8),
-                                          Expanded(child: Text(s)),
+                                          Text(s),
                                           IconButton(
-                                            icon: const Icon(Icons.delete, size: 18),
+                                            icon: const Icon(Icons.delete_outline),
                                             onPressed: () async {
                                               await _removeSubCategory(parent, s);
                                               setDialogState(() {});
@@ -523,31 +608,21 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                       ),
                                     )),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 24),
                                   child: Row(
                                     children: [
                                       Expanded(
                                         child: TextField(
                                           controller: subCtrl,
-                                          decoration: const InputDecoration(
-                                            hintText: 'Add sub-category',
-                                            isDense: true,
-                                          ),
-                                          onSubmitted: (val) async {
-                                            final v=val.trim();
-                                            if(v.isEmpty) return;
-                                            await _addSubCategory(parent, v);
-                                            subCtrl.clear();
-                                            setDialogState(() {});
-                                          },
+                                          decoration: const InputDecoration(labelText: 'Add sub-category'),
                                         ),
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.add),
+                                        icon: const Icon(Icons.add_circle_outline),
                                         onPressed: () async {
-                                          final v=subCtrl.text.trim();
-                                          if(v.isEmpty) return;
-                                          await _addSubCategory(parent, v);
+                                          final sub = subCtrl.text.trim();
+                                          if (sub.isEmpty) return;
+                                          await _addSubCategory(parent, sub);
                                           subCtrl.clear();
                                           setDialogState(() {});
                                         },
@@ -561,50 +636,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: addCatController,
-                              decoration: const InputDecoration(
-                                labelText: 'Add category',
-                                border: OutlineInputBorder(),
-                              ),
-                              onSubmitted: (val) async {
-                                final value = val.trim();
-                                if (value.isEmpty || _categories.contains(value)) return;
-                                setDialogState(() {
-                                  _categories.add(value);
-                                  _dedupCats();
-                                  addCatController.clear();
-                                });
-                                await _saveSettings();
-                              },
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.add),
-                            onPressed: () async {
-                              final value = addCatController.text.trim();
-                              if (value.isEmpty || _categories.contains(value)) return;
-                              setDialogState(() {
-                                _categories.add(value);
-                                _dedupCats();
-                                addCatController.clear();
-                              });
-                              await _saveSettings();
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Close'),
-                        ),
-                      ),
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
                     ],
                   ),
                 ),
