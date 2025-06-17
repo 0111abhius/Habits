@@ -90,6 +90,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   Future<void> _reconcileSleepEntriesForSelectedDate() async {
     if (sleepTime == null || wakeTime == null) return;
+    // Do not modify historical data: only reconcile for today or future
+    final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    if (selectedDate.isBefore(today)) return;
     final userId = FirebaseAuth.instance.currentUser?.uid;
     if (userId == null) return;
 
@@ -352,8 +355,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     .map((e) => e.startTime.hour)
                     .toSet();
 
-                // Autofill sleep blocks
-                if (sleepTime != null && wakeTime != null) {
+                // Autofill sleep blocks only for today or future; leave past dates untouched
+                final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+                final bool isPastDate = selectedDate.isBefore(today);
+                if (!isPastDate && sleepTime != null && wakeTime != null) {
                   for (var hour = 0; hour < 24; hour++) {
                     if (_isSleepHour(hour)) {
                       _ensureSleepEntry(hour, entries);
@@ -694,7 +699,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
       }
 
       if (timesChanged) {
-        // reconcile entries for selected date so timeline reflects new range instantly
         await _reconcileSleepEntriesForSelectedDate();
       }
 
