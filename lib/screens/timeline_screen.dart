@@ -73,7 +73,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   bool _dayComplete = false;
   bool _habitsExpanded = true;
-  final Set<String> _templateAppliedDates = {}; // yyyy-MM-dd strings
 
   @override
   void initState() {
@@ -288,7 +287,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   Navigator.pushNamed(context, '/habits');
                   break;
                 case 'template':
-                  Navigator.pushNamed(context, '/template');
+                  await Navigator.pushNamed(context, '/template');
+                  if (mounted) setState(() {});
                   break;
               }
             },
@@ -385,7 +385,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     .map((e) => e.startTime.hour)
                     .toSet();
 
-                // Apply template once if needed
+                // Always attempt to apply template (idempotent)
                 _applyTemplateIfNeeded(entries);
 
                 // Autofill sleep blocks only for today or future; leave past dates untouched
@@ -917,7 +917,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
     // Only today or future
     final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     if (selectedDate.isBefore(today)) return;
-    if (_templateAppliedDates.contains(dateStr)) return;
     if (_dayComplete) return; // don't overwrite completed day
 
     // fetch template docs
@@ -968,6 +967,5 @@ class _TimelineScreenState extends State<TimelineScreen> {
       batch.set(entriesColl.doc(newEntry.id), newEntry.toMap());
     }
     await batch.commit();
-    _templateAppliedDates.add(dateStr);
   }
 } 
