@@ -27,19 +27,35 @@ class _TimelineScreenState extends State<TimelineScreen> {
     'Hobby',
     'Other'
   ];
-  List<String> _categories = List.from(_initialCategories);
+  List<String> _categories = List.from(_initialCategories); // active categories
+  List<String> _archivedCategories = []; // categories removed from active but kept for history
   Map<String, List<String>> _subCategories = {}; // parent -> list of subs
 
   List<String> _flattenCats() {
     // Use a set to guarantee uniqueness and avoid duplicate Dropdown items
     final flatSet = <String>{};
-    for (final parent in _categories) {
+
+    // helper to add parent and its subs
+    void addParent(String parent) {
       flatSet.add(parent);
       final subs = _subCategories[parent] ?? [];
       for (final s in subs) {
         flatSet.add('$parent / $s');
       }
     }
+
+    for (final parent in _categories) {
+      addParent(parent);
+    }
+
+    // If viewing a past date, also include archived categories so old entries display correctly
+    final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    if (selectedDate.isBefore(today)) {
+      for (final parent in _archivedCategories) {
+        addParent(parent);
+      }
+    }
+
     return flatSet.toList();
   }
 
@@ -160,6 +176,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
           sleepTime = _parseTime(sleepTxt);
           wakeTime = _parseTime(wakeTxt);
           _categories = List<String>.from(data['customCategories'] ?? []);
+          _archivedCategories = List<String>.from(data['archivedCategories'] ?? []);
           _subCategories = (data['subCategories'] as Map<String, dynamic>? ?? {})
               .map((k, v) => MapEntry(k, List<String>.from(v as List)));
           _dedupCats();
@@ -177,12 +194,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
           'sleepTime': '23:00',
           'wakeTime': '7:00',
           'customCategories': ['Work', 'Personal', 'Health', 'Other'],
+          'archivedCategories': [],
           'lastUpdated': FieldValue.serverTimestamp(),
         });
         setState(() {
           _sleepTimeController.text = '23:00';
           _wakeTimeController.text = '7:00';
           _categories = List.from(_initialCategories);
+          _archivedCategories = [];
           _dedupCats();
         });
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
@@ -561,6 +580,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                               if (newCat.isEmpty) return;
                               setDialogState(() {
                                 _categories.add(newCat);
+                                _archivedCategories.remove(newCat); // ensure it's active
                                 _dedupCats();
                               });
                               addCatController.clear();
@@ -589,7 +609,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                       onPressed: () async {
                                         setDialogState(() {
                                           _categories.remove(parent);
-                                          _subCategories.remove(parent);
+                                          if (!_archivedCategories.contains(parent)) {
+                                            _archivedCategories.add(parent);
+                                          }
+                                          // keep subCategories map intact so past subs remain
                                           _dedupCats();
                                         });
                                         await _saveSettings();
@@ -677,6 +700,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         'sleepTime': _sleepTimeController.text,
         'wakeTime': _wakeTimeController.text,
         'customCategories': _categories,
+        'archivedCategories': _archivedCategories,
         'subCategories': _subCategories,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -716,6 +740,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   void _dedupCats() {
     _categories = _categories.toSet().toList();
+    _archivedCategories = _archivedCategories.toSet().toList();
   }
 
   Future<void> _toggleSplit(int hour) async {
@@ -779,8 +804,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
     // Pre-compute flattened categories once to avoid redundant work and help with value validation
     final availableCategories = _flattenCats();
-    // If the entry.category is no longer present in the available list (e.g. the sub-category was deleted),
-    // fall back to null so that DropdownButton does not throw an assertion.
+    // Always ensure current entry's category is available for its own dropdown
+    if (entry.category.isNotEmpty && !availableCategories.contains(entry.category)) {
+      availableCategories.add(entry.category);
+    }
+
     final String? dropdownValue =
         (entry.category.isNotEmpty && availableCategories.contains(entry.category))
             ? entry.category
