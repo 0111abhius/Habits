@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "308942065441",
+    "project_id": "habitlogger-55050",
+    "storage_bucket": "habitlogger-55050.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:308942065441:android:a382694cb907a458eeb860",
+        "android_client_info": {
+          "package_name": "com.habits.habit_logger"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "308942065441-8e2852nkfi317os98pi9gsb48heirtn4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.habits.habit_logger",
+            "certificate_hash": "a06e9510c085caa01025a38d7fdd1c4173df8d05"
+          }
+        },
+        {
+          "client_id": "308942065441-42mdk84k683j0pib4qudto86s97p3dsj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfmZKJgt64-4l94e0S_tE9wsXO0x0TQxA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "308942065441-42mdk84k683j0pib4qudto86s97p3dsj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
