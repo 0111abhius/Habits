@@ -74,6 +74,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
   bool _dayComplete = false;
   bool _habitsExpanded = true;
   bool _showRetro = false;
+  final Map<String, GlobalKey> _blockKeys = {};
 
   Color _planBg(BuildContext context) => Color.alphaBlend(Colors.indigo.withOpacity(0.04), Theme.of(context).colorScheme.surface);
   Color _retroBg(BuildContext context) => Color.alphaBlend(Colors.orange.withOpacity(0.04), Theme.of(context).colorScheme.surface);
@@ -230,6 +231,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
   }
 
+  void _scrollToNow() {
+    final now = DateTime.now();
+    final int hour = now.hour;
+    final minute = (_splitHours.contains(hour) && now.minute >=30)?30:0;
+    final id = '${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}';
+    final gKey = _blockKeys[id];
+    if(gKey?.currentContext!=null){
+      Scrollable.ensureVisible(gKey!.currentContext!, duration: const Duration(milliseconds:400), alignment:0.0, curve: Curves.easeOut);
+    }
+  }
+
   bool _isSleepHour(int hour) {
     if (sleepTime == null || wakeTime == null) return false;
     final sleepHour = sleepTime!.hour;
@@ -281,6 +293,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Analytics',
             onPressed: () => Navigator.pushNamed(context, '/analytics'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.access_time),
+            tooltip: 'Jump to Now',
+            onPressed: _scrollToNow,
           ),
           PopupMenuButton<String>(
             tooltip: 'Customize',
@@ -421,6 +438,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   itemCount: 24,
                   itemBuilder: (context, hour) {
                     // Retrieve any existing entries for this hour and minute markers
+                    String? _sectionTitle(int h){
+                      if(h==6) return 'Morning';
+                      if(h==12) return 'Afternoon';
+                      if(h==18) return 'Evening';
+                      return null;
+                    }
+
                     TimelineEntry _blank(int minute) {
                       final start=DateTime(selectedDate.year,selectedDate.month,selectedDate.day,hour,minute);
                       return TimelineEntry(
@@ -447,7 +471,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                         : null;
 
                     final bool isSleepRow = entry00.category == 'Sleep';
-                    return Container(
+                    final container= Container(
                       margin: const EdgeInsets.symmetric(horizontal:8,vertical:3),
                       decoration: BoxDecoration(
                         color: isSleepRow ? Colors.blueGrey.withOpacity(0.04) : Theme.of(context).colorScheme.surfaceVariant,
@@ -457,7 +481,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                       child: Column(
                         children: [
                           ListTile(
-                            title: Text('${hour.toString().padLeft(2, '0')}:00', style: Theme.of(context).textTheme.titleSmall),
+                            title: Text(DateFormat('h a').format(DateTime(selectedDate.year,selectedDate.month,selectedDate.day,hour)), style: Theme.of(context).textTheme.titleSmall),
                             trailing: IconButton(
                               icon: Icon(_splitHours.contains(hour) ? Icons.remove : Icons.call_split, color: Theme.of(context).colorScheme.primary),
                               onPressed: () => _toggleSplit(hour),
@@ -468,6 +492,19 @@ class _TimelineScreenState extends State<TimelineScreen> {
                         ],
                       ),
                     );
+
+                    final List<Widget> cardChildren=[];
+
+                    final section=_sectionTitle(hour);
+                    if(section!=null){
+                      cardChildren.add(Padding(
+                        padding: const EdgeInsets.symmetric(horizontal:16,vertical:8),
+                        child: Text(section,style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      ));
+                    }
+
+                    cardChildren.add(container);
+                    return Column(children: cardChildren);
                   },
                 );
               },
@@ -498,8 +535,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
         endTime: entry.endTime,
         planCategory: isPlan ? category : entry.planCategory,
         planNotes: isPlan ? notes : entry.planNotes,
-        category: isPlan ? category : category,
-        notes: isPlan ? notes : notes,
+        category: isPlan ? entry.category : category,
+        notes: isPlan ? entry.notes : notes,
       );
 
       await entriesColl.doc(docId).set(fullEntry.toMap());
@@ -616,7 +653,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                 _dedupCats();
                               });
                               addCatController.clear();
-                              await _saveSettings();
+                              await _saveSettings(refreshTimeline: false);
                             },
                           ),
                         ],
@@ -647,7 +684,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                           // keep subCategories map intact so past subs remain
                                           _dedupCats();
                                         });
-                                        await _saveSettings();
+                                        await _saveSettings(refreshTimeline: false);
                                       },
                                     ),
                               children: [
@@ -708,7 +745,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  Future<void> _saveSettings() async {
+  Future<void> _saveSettings({bool refreshTimeline = true}) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -738,7 +775,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       }, SetOptions(merge: true));
 
       // refresh local vars
-      if (mounted) {
+      if (refreshTimeline && mounted) {
         setState(() {
           if (timesChanged) {
             sleepTime = newSleep;
@@ -826,7 +863,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
   String _noteKey(int hour, int minute) => '${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}';
 
   Widget _buildSubBlock(TimelineEntry entry, int hour, int minute) {
-    final key = _noteKey(hour, minute);
+    final keyStr = _noteKey(hour, minute);
+    final subKey = _blockKeys.putIfAbsent(keyStr, () => GlobalKey());
+    final key = keyStr;
     final controller = _noteControllers.putIfAbsent(key, () => TextEditingController(text: entry.notes));
     // keep controller text in sync if backend changed (but avoid disrupting typing)
     if (controller.text != entry.notes && !_noteDebouncers.containsKey(key)) {
@@ -837,9 +876,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
     // Pre-compute flattened categories once to avoid redundant work and help with value validation
     final availableCategories = _flattenCats();
     // Always ensure current entry's category is available for its own dropdown
-    if (entry.category.isNotEmpty && !availableCategories.contains(entry.category)) {
-      availableCategories.add(entry.category);
-    }
+    void _ensureValue(String v){if(v.isNotEmpty && !availableCategories.contains(v)){availableCategories.add(v);} }
+    _ensureValue(entry.category);
+    _ensureValue(entry.planCategory);
 
     final String? dropdownValue =
         (entry.category.isNotEmpty && availableCategories.contains(entry.category))
@@ -912,12 +951,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
           ]),
         ));
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal:16,vertical:4),
-      child: Row(
-        children: [planColumn, if(_showRetro) const SizedBox(width:2), if(_showRetro) retroColumn],
-      ),
-    );
+    return KeyedSubtree(key: subKey,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal:16,vertical:4),
+        child: Row(
+          children: [planColumn, if(_showRetro) const SizedBox(width:2), if(_showRetro) retroColumn],
+        ),
+      ));
   }
 
   String _dateStr(DateTime d)=>DateFormat('yyyy-MM-dd').format(d);
@@ -931,12 +971,21 @@ class _TimelineScreenState extends State<TimelineScreen> {
   Future<void> _setDayComplete(bool val) async{
     final uid=FirebaseAuth.instance.currentUser?.uid; if(uid==null) return;
     final ref=getFirestore().collection('daily_logs').doc(uid).collection('logs').doc(_dateStr(selectedDate));
+    final double prevOffset=_scrollController.hasClients?_scrollController.offset:0;
     if(val){
       await ref.set({'date':_dateStr(selectedDate),'lastUpdated':FieldValue.serverTimestamp()});
     }else{
       await ref.delete();
     }
     setState(()=>_dayComplete=val);
+    _pendingScrollOffset=prevOffset;
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      if(_pendingScrollOffset!=null && _scrollController.hasClients){
+        final max=_scrollController.position.maxScrollExtent;
+        _scrollController.jumpTo(_pendingScrollOffset!.clamp(0,max));
+        _pendingScrollOffset=null;
+      }
+    });
   }
 
   // ---------- Sub-category helpers ----------
@@ -949,8 +998,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
     if (!list.contains(sub)) {
       list.add(sub);
       _subCategories[parent] = list;
-      await _saveSettings();
+      await _saveSettings(refreshTimeline: false);
+
+      final double offset=_scrollController.hasClients?_scrollController.offset:0;
       if (mounted) setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_){
+        if(_scrollController.hasClients){
+          _scrollController.jumpTo(offset.clamp(0,_scrollController.position.maxScrollExtent));
+        }
+      });
     }
   }
 
@@ -963,8 +1019,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
     } else {
       _subCategories[parent] = list;
     }
-    await _saveSettings();
+    await _saveSettings(refreshTimeline: false);
+    final double offset=_scrollController.hasClients?_scrollController.offset:0;
     if (mounted) setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      if(_scrollController.hasClients){
+        _scrollController.jumpTo(offset.clamp(0,_scrollController.position.maxScrollExtent));
+      }
+    });
   }
 
   Future<void> _applyTemplateIfNeeded(List<TimelineEntry> currentEntries) async {
