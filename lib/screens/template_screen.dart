@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../models/timeline_entry.dart';
 import '../main.dart';
+import '../utils/categories.dart';
 
 class TemplateScreen extends StatefulWidget {
   const TemplateScreen({Key? key}) : super(key: key);
@@ -20,19 +21,10 @@ class _TemplateScreenState extends State<TemplateScreen> {
   final Map<String, TextEditingController> _noteCtrls = {};
   bool _pushing=false;
 
-  // Categories helpers (reuse minimal copy from timeline)
-  static const List<String> _initialCategories = [
-    'Sleep',
-    'Work',
-    'Exercise',
-    'Study',
-    'Social',
-    'Hobby',
-    'Other'
-  ];
-  List<String> _categories = List.from(_initialCategories);
+  List<String> _categories = List.from(kDefaultCategories);
 
   List<String> _flattenCats() => _categories;
+  String _displayLabel(String c)=>displayCategory(c);
 
   @override
   void initState() {
@@ -159,7 +151,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
           DropdownButton<String>(
             value: entry.planCategory.isEmpty ? null : entry.planCategory,
             hint: const Text('Select category'),
-            items: _flattenCats().map((c)=>DropdownMenuItem(value:c,child:Text(c))).toList(),
+            items: _flattenCats().map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c)))).toList(),
             onChanged: (val) async {
               if (val == null) return;
               final updated = TimelineEntry(

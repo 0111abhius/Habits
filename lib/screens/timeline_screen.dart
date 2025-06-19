@@ -7,6 +7,7 @@ import '../widgets/habit_tracker.dart';
 import '../main.dart';  // Import for getFirestore()
 import 'package:intl/intl.dart';
 import 'dart:async';
+import '../utils/categories.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -18,46 +19,12 @@ class TimelineScreen extends StatefulWidget {
 class _TimelineScreenState extends State<TimelineScreen> {
   DateTime selectedDate = DateTime.now();
   static const List<String> _protectedCategories = ['Sleep'];
-  static const List<String> _initialCategories = [
-    'Sleep',
-    'Work',
-    'Exercise',
-    'Study',
-    'Social',
-    'Hobby',
-    'Other'
-  ];
-  List<String> _categories = List.from(_initialCategories); // active categories
+  List<String> _categories = List.from(kDefaultCategories);
+
+  String _displayLabel(String cat) => displayCategory(cat);
+
   List<String> _archivedCategories = []; // categories removed from active but kept for history
   Map<String, List<String>> _subCategories = {}; // parent -> list of subs
-
-  List<String> _flattenCats() {
-    // Use a set to guarantee uniqueness and avoid duplicate Dropdown items
-    final flatSet = <String>{};
-
-    // helper to add parent and its subs
-    void addParent(String parent) {
-      flatSet.add(parent);
-      final subs = _subCategories[parent] ?? [];
-      for (final s in subs) {
-        flatSet.add('$parent / $s');
-      }
-    }
-
-    for (final parent in _categories) {
-      addParent(parent);
-    }
-
-    // If viewing a past date, also include archived categories so old entries display correctly
-    final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
-    if (selectedDate.isBefore(today)) {
-      for (final parent in _archivedCategories) {
-        addParent(parent);
-      }
-    }
-
-    return flatSet.toList();
-  }
 
   TimeOfDay? wakeTime;
   TimeOfDay? sleepTime;
@@ -228,7 +195,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         setState(() {
           _sleepTimeController.text = '23:00';
           _wakeTimeController.text = '7:00';
-          _categories = List.from(_initialCategories);
+          _categories = List.from(kDefaultCategories);
           _archivedCategories = [];
           _dedupCats();
         });
@@ -687,7 +654,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     TimeOfDay? dialogSleep = sleepTime ?? (_sleepTimeController.text.isNotEmpty ? _parseTime(_sleepTimeController.text) : const TimeOfDay(hour: 23, minute: 0));
     TimeOfDay? dialogWake = wakeTime ?? (_wakeTimeController.text.isNotEmpty ? _parseTime(_wakeTimeController.text) : const TimeOfDay(hour: 7, minute: 0));
 
-    await showDialog(
+    final result = await showDialog(
       context: context,
       barrierDismissible: true,
       builder: (ctx) {
@@ -711,7 +678,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                           if (t != null) {
                             setDialogState(() => dialogSleep = t);
                             _sleepTimeController.text = _fmt24(t);
-                            await _saveSettings();
+                            await _saveSettings(refreshTimeline: true);
                           }
                         },
                         child: Text(dialogSleep?.format(context) ?? 'Set'),
@@ -731,7 +698,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                           if (t != null) {
                             setDialogState(() => dialogWake = t);
                             _wakeTimeController.text = _fmt24(t);
-                            await _saveSettings();
+                            await _saveSettings(refreshTimeline: true);
                           }
                         },
                         child: Text(dialogWake?.format(context) ?? 'Set'),
@@ -748,6 +715,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
         );
       },
     );
+
+    // Rebuild timeline to reflect any category changes made inside the dialog
+    if (mounted && result != null) {
+      setState(() {});
+    }
   }
 
   Future<void> _showCategoriesDialog(BuildContext context) async {
@@ -788,7 +760,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                 _dedupCats();
                               });
                               addCatController.clear();
-                              await _saveSettings(refreshTimeline: false);
+                              await _saveSettings(refreshTimeline: true);
                             },
                           ),
                         ],
@@ -805,7 +777,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                             final isDefault = _protectedCategories.contains(parent);
                             final TextEditingController subCtrl = TextEditingController();
                             return ExpansionTile(
-                              title: Text(parent),
+                              title: Text(_displayLabel(parent)),
                               trailing: isDefault
                                   ? null
                                   : IconButton(
@@ -819,7 +791,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                           // keep subCategories map intact so past subs remain
                                           _dedupCats();
                                         });
-                                        await _saveSettings(refreshTimeline: false);
+                                        await _saveSettings(refreshTimeline: true);
                                       },
                                     ),
                               children: [
@@ -950,8 +922,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
   Future<void> _toggleSplit(int hour) async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
     if (userId == null) return;
-    // remember scroll offset to avoid jump
-    final double prevOffset = _scrollController.hasClients ? _scrollController.offset : 0;
+    // No need to capture offset; we will not rebuild the whole list.
     final entriesColl = getFirestore()
         .collection('timeline_entries')
         .doc(userId)
@@ -961,16 +932,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final halfDocId = _docId(halfStart);
 
     if (_splitHours.contains(hour)) {
-      // merge: remove :30 entry
+      // MERGE -> remove 30-minute entry
       await entriesColl.doc(halfDocId).delete();
+
       _splitHours.remove(hour);
+      _cachedEntries.removeWhere((e) => e.id == halfDocId);
+
       final k = _noteKey(hour, 30);
-      _noteControllers[k]?.dispose();
-      _noteControllers.remove(k);
-      _noteDebouncers[k]?.cancel();
-      _noteDebouncers.remove(k);
+      _noteControllers.remove(k)?.dispose();
+      _noteDebouncers.remove(k)?.cancel();
     } else {
-      // split: create empty :30 entry if not exists
+      // SPLIT -> add blank 30-minute entry
       final newEntry = TimelineEntry(
         id: halfDocId,
         userId: userId,
@@ -981,18 +953,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
         notes: '',
       );
       await entriesColl.doc(halfDocId).set(newEntry.toMap());
-      _splitHours.add(hour);
-    }
-    if (mounted) setState(() {});
 
-    _pendingScrollOffset = prevOffset;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_pendingScrollOffset!=null && _scrollController.hasClients) {
-        final max=_scrollController.position.maxScrollExtent;
-        _scrollController.jumpTo(_pendingScrollOffset!.clamp(0,max));
-        _pendingScrollOffset=null;
-      }
-    });
+      _splitHours.add(hour);
+      _cachedEntries.add(newEntry);
+    }
+
+    // Rebuild only if the widget is still in the tree; this redraws the two
+    // affected rows without resetting scroll position.
+    if (mounted) setState(() {});
   }
 
   String _noteKey(int hour, int minute) => '${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}';
@@ -1044,7 +1012,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
               value: entry.planCategory.isEmpty?null:entry.planCategory,
               hint: const Text('Plan'),
               isExpanded: true,
-              items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(c, overflow: TextOverflow.ellipsis))).toList(),
+              items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList(),
               onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.planNotes,isPlan:true);},
             ),
             TextField(
@@ -1073,7 +1041,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
               value: dropdownValue,
               hint: const Text('Retro'),
               isExpanded: true,
-              items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(c, overflow: TextOverflow.ellipsis))).toList(),
+              items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList(),
               onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.notes);},
             ),
             TextField(
@@ -1135,7 +1103,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     if (!list.contains(sub)) {
       list.add(sub);
       _subCategories[parent] = list;
-      await _saveSettings(refreshTimeline: false);
+      await _saveSettings(refreshTimeline: true);
 
       final double offset=_scrollController.hasClients?_scrollController.offset:0;
       if (mounted) setState(() {});
@@ -1156,7 +1124,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     } else {
       _subCategories[parent] = list;
     }
-    await _saveSettings(refreshTimeline: false);
+    await _saveSettings(refreshTimeline: true);
     final double offset=_scrollController.hasClients?_scrollController.offset:0;
     if (mounted) setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_){
@@ -1227,5 +1195,29 @@ class _TimelineScreenState extends State<TimelineScreen> {
       batch.set(entriesColl.doc(newEntry.id), newEntry.toMap());
     }
     await batch.commit();
+  }
+
+  List<String> _flattenCats() {
+    final flatSet = <String>{};
+    void addParent(String parent) {
+      flatSet.add(parent);
+      final subs = _subCategories[parent] ?? [];
+      for (final s in subs) {
+        flatSet.add('$parent / $s');
+      }
+    }
+
+    for (final parent in _categories) {
+      addParent(parent);
+    }
+
+    final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    if (selectedDate.isBefore(today)) {
+      for (final parent in _archivedCategories) {
+        addParent(parent);
+      }
+    }
+
+    return flatSet.toList();
   }
 } 

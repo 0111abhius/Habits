@@ -31,10 +31,11 @@ void main() async {
     await Firebase.initializeApp(
       options: const FirebaseOptions(
         apiKey: "AIzaSyAfmZKJgt64-4l94e0S_tE9wsXO0x0TQxA",
-        appId: "1:308942065441:android:a382694cb907a458eeb860",
+        appId: "1:308942065441:web:a382694cb907a458eeb860",
         messagingSenderId: "308942065441",
         projectId: "habitlogger-55050",
-        storageBucket: "habitlogger-55050.firebasestorage.app",
+        authDomain: "habitlogger-55050.firebaseapp.com",
+        storageBucket: "habitlogger-55050.appspot.com",
       ),
     );
     
