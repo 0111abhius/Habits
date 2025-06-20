@@ -1012,8 +1012,19 @@ class _TimelineScreenState extends State<TimelineScreen> {
               value: entry.planCategory.isEmpty?null:entry.planCategory,
               hint: const Text('Plan'),
               isExpanded: true,
-              items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList(),
-              onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.planNotes,isPlan:true);},
+              items: [const DropdownMenuItem(value: '__custom', child: Text('Custom…'))]
+                  ..addAll(availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList()),
+              onChanged:(val) async {
+                if(val==null) return;
+                if(val=='__custom'){
+                  final custom = await _promptCustomCategory();
+                  if(custom!=null && custom.isNotEmpty){
+                    _updateEntry(entry, custom, entry.planNotes, isPlan:true);
+                  }
+                }else{
+                  _updateEntry(entry,val,entry.planNotes,isPlan:true);
+                }
+              },
             ),
             TextField(
               controller: planNoteCtrl,
@@ -1041,8 +1052,19 @@ class _TimelineScreenState extends State<TimelineScreen> {
               value: dropdownValue,
               hint: const Text('Retro'),
               isExpanded: true,
-              items: availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList(),
-              onChanged:(val){if(val!=null)_updateEntry(entry,val,entry.notes);},
+              items: [const DropdownMenuItem(value: '__custom', child: Text('Custom…'))]
+                  ..addAll(availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList()),
+              onChanged:(val) async {
+                if(val==null) return;
+                if(val=='__custom'){
+                  final custom = await _promptCustomCategory();
+                  if(custom!=null && custom.isNotEmpty){
+                    _updateEntry(entry, custom, entry.notes);
+                  }
+                }else{
+                  _updateEntry(entry,val,entry.notes);
+                }
+              },
             ),
             TextField(
               controller: retroNoteCtrl,
@@ -1219,5 +1241,24 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
 
     return flatSet.toList();
+  }
+
+  Future<String?> _promptCustomCategory() async {
+    final TextEditingController ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Custom category'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Enter category'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('OK')),
+        ],
+      ),
+    );
   }
 } 
