@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../models/timeline_entry.dart';
 import '../main.dart';
-import '../utils/categories.dart';
+import '../utils/activities.dart';
 
 class TemplateScreen extends StatefulWidget {
   const TemplateScreen({Key? key}) : super(key: key);
@@ -21,16 +21,16 @@ class _TemplateScreenState extends State<TemplateScreen> {
   final Map<String, TextEditingController> _noteCtrls = {};
   bool _pushing=false;
 
-  List<String> _categories = List.from(kDefaultCategories);
+  List<String> _activities = List.from(kDefaultActivities);
 
-  List<String> _flattenCats() => _categories;
-  String _displayLabel(String c)=>displayCategory(c);
+  List<String> _flattenCats() => _activities;
+  String _displayLabel(String c)=>displayActivity(c);
 
   @override
   void initState() {
     super.initState();
     _loadTemplate();
-    _loadCategories();
+    _loadActivities();
   }
 
   @override
@@ -63,9 +63,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
         date: DateTime(2000),
         startTime: start,
         endTime: start.add(Duration(minutes: minute == 0 ? 60 : 30)),
-        planCategory: data['planCategory'] ?? data['category'] ?? '',
+        planactivity: data['planactivity'] ?? data['activity'] ?? '',
         planNotes: data['planNotes'] ?? data['notes'] ?? '',
-        category: data['category'] ?? '',
+        activity: data['activity'] ?? '',
         notes: data['notes'] ?? '',
       );
       if (minute == 30) _splitHours.add(hour);
@@ -86,9 +86,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
         .collection('entries')
         .doc(entry.id)
         .set({
-      'planCategory': entry.planCategory,
+      'planactivity': entry.planactivity,
       'planNotes': entry.planNotes,
-      'category': entry.category,
+      'activity': entry.activity,
       'notes': entry.notes,
     });
   }
@@ -114,9 +114,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
         date: DateTime(2000),
         startTime: start,
         endTime: start.add(const Duration(minutes: 30)),
-        planCategory: '',
+        planactivity: '',
         planNotes: '',
-        category: '',
+        activity: '',
         notes: '',
       );
       _entries[id30] = entry;
@@ -134,9 +134,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
       date: DateTime(2000),
       startTime: DateTime(2000,1,1,hour,minute),
       endTime: DateTime(2000,1,1,hour,minute).add(Duration(minutes: minute==0?60:30)),
-      planCategory: '',
+      planactivity: '',
       planNotes: '',
-      category: '',
+      activity: '',
       notes: '',
     );
 
@@ -150,8 +150,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DropdownButton<String>(
-            value: entry.planCategory.isEmpty ? null : entry.planCategory,
-            hint: const Text('Select category'),
+            value: entry.planactivity.isEmpty ? null : entry.planactivity,
+            hint: const Text('Select activity'),
             items: [
               const DropdownMenuItem(value: '', child: Text('— None —')),
             ]
@@ -166,9 +166,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 date: entry.date,
                 startTime: entry.startTime,
                 endTime: entry.endTime,
-                planCategory: val,
+                planactivity: val,
                 planNotes: entry.planNotes,
-                category: val,
+                activity: val,
                 notes: entry.notes,
               );
               _entries[id] = updated;
@@ -188,7 +188,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 date: entry.date,
                 startTime: entry.startTime,
                 endTime: entry.endTime,
-                category: entry.category,
+                activity: entry.activity,
                 notes: val,
               );
               _entries[id] = updated;
@@ -272,16 +272,16 @@ class _TemplateScreenState extends State<TemplateScreen> {
           date: DateTime(2000),
           startTime: start,
           endTime: start.add(const Duration(hours: 1)),
-          planCategory: 'Sleep',
+          planactivity: 'Sleep',
           planNotes: '',
-          category: 'Sleep',
+          activity: 'Sleep',
           notes: '',
         );
         _entries[id] = entry;
         batch.set(coll.doc(id), {
-          'planCategory': 'Sleep',
+          'planactivity': 'Sleep',
           'planNotes': '',
-          'category': 'Sleep',
+          'activity': 'Sleep',
           'notes': '',
         });
       }
@@ -315,9 +315,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
           final start = DateTime(date.year,date.month,date.day,hour,minute);
           final id = DateFormat('yyyyMMdd_HHmm').format(start);
           final data=doc.data();
-          final tmplPlanCat = data['planCategory'] ?? data['category'] ?? '';
+          final tmplPlanCat = data['planactivity'] ?? data['activity'] ?? '';
           final tmplPlanNotes = data['planNotes'] ?? data['notes'] ?? '';
-          final tmplRetroCat  = (data['category'] ?? '') == 'Sleep' ? 'Sleep' : '';
+          final tmplRetroCat  = (data['activity'] ?? '') == 'Sleep' ? 'Sleep' : '';
           final tmplRetroNotes = tmplRetroCat.isNotEmpty ? (data['notes'] ?? '') : '';
 
           batch.set(entriesColl.doc(id),{
@@ -326,9 +326,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
             'hour':hour,
             'startTime':Timestamp.fromDate(start),
             'endTime':Timestamp.fromDate(start.add(Duration(minutes:minute==0?60:30))),
-            'planCategory':tmplPlanCat,
+            'planactivity':tmplPlanCat,
             'planNotes':tmplPlanNotes,
-            'category':tmplRetroCat,
+            'activity':tmplRetroCat,
             'notes':tmplRetroNotes,
           });
         }
@@ -342,17 +342,17 @@ class _TemplateScreenState extends State<TemplateScreen> {
     }
   }
 
-  Future<void> _loadCategories() async {
+  Future<void> _loadActivities() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final doc = await getFirestore().collection('user_settings').doc(uid).get();
     if (!doc.exists) return;
     final data = doc.data()!;
-    final List<String> custom = List<String>.from(data['customCategories'] ?? []);
-    final List<String> archived = List<String>.from(data['archivedCategories'] ?? []);
-    final Set<String> all = {...kDefaultCategories, ...custom}..removeAll(archived);
+    final List<String> custom = List<String>.from(data['customActivities'] ?? []);
+    final List<String> archived = List<String>.from(data['archivedActivities'] ?? []);
+    final Set<String> all = {...kDefaultActivities, ...custom}..removeAll(archived);
     setState(() {
-      _categories = all.toList();
+      _activities = all.toList();
     });
   }
 } 

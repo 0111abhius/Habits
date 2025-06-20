@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 void main() {
-  testWidgets('Selecting category writes deterministic doc', (tester) async {
+  testWidgets('Selecting activity writes deterministic doc', (tester) async {
     final fs = await pumpWidgetWithFirestore(tester, const TimelineScreen());
 
     // tap first dropdown (00:00)
@@ -25,6 +25,6 @@ void main() {
         .doc(id)
         .get();
     expect(doc.exists, true);
-    expect(doc.data()!['category'], 'Work');
+    expect(doc.data()!['activity'], 'Work');
   });
 } 

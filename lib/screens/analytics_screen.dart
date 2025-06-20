@@ -33,11 +33,11 @@ class _HabitStat {
 }
 
 class _AnalyticsData {
-  final Map<String, double> categoryAvg; // hours per day
+  final Map<String, double> activityAvg; // hours per day
   final List<_HabitStat> habits;
   final int days;
 
-  _AnalyticsData({required this.categoryAvg, required this.habits, required this.days});
+  _AnalyticsData({required this.activityAvg, required this.habits, required this.days});
 }
 
 class AnalyticsScreen extends StatefulWidget {
@@ -67,7 +67,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Future<_AnalyticsData> _fetchData() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return _AnalyticsData(categoryAvg: {}, habits: [], days: 0);
+    if (user == null) return _AnalyticsData(activityAvg: {}, habits: [], days: 0);
 
     DateTime start;
     DateTime end;
@@ -87,7 +87,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         start = _startOfMonth(end); // first day of current month
         break;
       case AnalyticsRange.custom:
-        if (_customRange == null) return _AnalyticsData(categoryAvg: {}, habits: [], days: 0);
+        if (_customRange == null) return _AnalyticsData(activityAvg: {}, habits: [], days: 0);
         start = _customRange!.start;
         end = _customRange!.end;
         break;
@@ -116,7 +116,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     final days = completedDates.length;
     if(days==0){
-      return _AnalyticsData(categoryAvg:{},habits:[],days:0);
+      return _AnalyticsData(activityAvg:{},habits:[],days:0);
     }
 
     final startStr = dateFormat.format(start);
@@ -135,11 +135,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         .where((e) => completedDates.contains(dateFormat.format(e.date)))
         .toList();
 
-    // Aggregate hours per category (sum then convert to avg per day)
+    // Aggregate hours per activity (sum then convert to avg per day)
     final Map<String, double> totals = {};
     for (final entry in entries) {
       final durationHours = entry.endTime.difference(entry.startTime).inMinutes / 60.0;
-      final cat = entry.category.isEmpty ? 'Uncategorised' : entry.category;
+      final cat = entry.activity.isEmpty ? 'Uncategorised' : entry.activity;
       totals[cat] = (totals[cat] ?? 0) + durationHours;
     }
 
@@ -210,7 +210,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       }
     }
 
-    return _AnalyticsData(categoryAvg: avgPerDay, habits: habitStats, days: days);
+    return _AnalyticsData(activityAvg: avgPerDay, habits: habitStats, days: days);
   }
 
   void _refreshStats() {
@@ -320,19 +320,19 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   if (snapshot.hasError) {
                     return Center(child: Text('Error: ${snapshot.error}'));
                   }
-                  final data = snapshot.data ?? _AnalyticsData(categoryAvg: {}, habits: [], days: 0);
-                  if (data.categoryAvg.isEmpty) {
+                  final data = snapshot.data ?? _AnalyticsData(activityAvg: {}, habits: [], days: 0);
+                  if (data.activityAvg.isEmpty) {
                     return const Center(child: Text('No data for selected range'));
                   }
 
-                  final sorted = data.categoryAvg.entries.toList()
+                  final sorted = data.activityAvg.entries.toList()
                     ..sort((a, b) => b.value.compareTo(a.value));
 
-                  final double totalHours = data.categoryAvg.values.fold(0, (a, b) => a + b);
+                  final double totalHours = data.activityAvg.values.fold(0, (a, b) => a + b);
 
                   return ListView(
                     children: [
-                      ..._buildCategoryTiles(sorted, totalHours),
+                      ..._buildactivityTiles(sorted, totalHours),
                       ListTile(
                         title: const Text('Days logged in range'),
                         trailing: Text('${data.days}'),
@@ -343,7 +343,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         trailing: Text('${totalHours.toStringAsFixed(1)} h/day'),
                       ),
                       const SizedBox(height: 8),
-                      _buildAdditionalStats(data.categoryAvg),
+                      _buildAdditionalStats(data.activityAvg),
                       if (data.habits.isNotEmpty) ...[
                         const Divider(),
                         const ListTile(title: Text('Habits')),
@@ -376,10 +376,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     if (data.isEmpty) return const SizedBox.shrink();
 
     final sleepHours = data['Sleep'] ?? 0;
-    final otherCategories = Map.of(data)..remove('Sleep');
+    final otherActivities = Map.of(data)..remove('Sleep');
     String topCat = '';
     double topHours = 0;
-    otherCategories.forEach((key, value) {
+    otherActivities.forEach((key, value) {
       if (value > topHours) {
         topCat = key;
         topHours = value;
@@ -404,7 +404,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  List<Widget> _buildCategoryTiles(List<MapEntry<String, double>> sorted, double totalHours) {
+  List<Widget> _buildactivityTiles(List<MapEntry<String, double>> sorted, double totalHours) {
     // group by parent
     final Map<String, double> parentTotals = {};
     final Map<String, Map<String,double>> childMap = {};

@@ -1,4 +1,4 @@
-// New file with shared activity constants and helpers
+// New utilities for activities naming
 const List<String> kDefaultActivities = [
   'Sleep',
   'Work',
@@ -10,7 +10,7 @@ const List<String> kDefaultActivities = [
   'Other',
 ];
 
-const Map<String, String> kactivityEmoji = {
+const Map<String, String> kActivityEmoji = {
   'Sleep': '😴',
   'Work': '💼',
   'Exercise': '🏋️',
@@ -21,7 +21,7 @@ const Map<String, String> kactivityEmoji = {
   'Other': '❓',
 };
 
-String displayactivity(String cat) {
-  final emoji = kactivityEmoji[cat];
-  return emoji != null ? '$emoji $cat' : cat;
+String displayActivity(String act) {
+  final emoji = kActivityEmoji[act];
+  return emoji != null ? '$emoji $act' : act;
 } 

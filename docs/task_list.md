@@ -34,13 +34,13 @@
 | 23 | Habit Tracker Screen | ☑️ Done |
 | 24 | Sleep Settings Dialog | ☑️ Done |
 | **Timeline Features** |||
-| 25 | Inline category dropdown per block | ☑️ Done |
+| 25 | Inline activity dropdown per block | ☑️ Done |
 | 26 | Inline notes TextField per block | ☑️ Done |
 | 27 | Autosave to Firestore on change | ☑️ Done |
 | 28 | Scroll timeline to Wake Time | ☑️ Done |
 | 29 | Highlight selected & today in CalendarStrip | ☑️ Done |
 | 30 | Autofill Sleep blocks based on settings | ☑️ Done |
-| 31 | Custom categories (user defined) | ☑️ Done |
+| 31 | Custom Activities (user defined) | ☑️ Done |
 | 32 | Settings dialog improvements | ☑️ Done |
 | **Habits Features** |||
 | 33 | Add habit dialog | ☑️ Done |
@@ -50,7 +50,7 @@
 | **Settings** |||
 | 37 | Persist Sleep & Wake time in Firestore | ☑️ Done |
 | 38 | Load settings in dialog | ☑️ Done |
-| 39 | Category management in settings | ☑️ Done |
+| 39 | activity management in settings | ☑️ Done |
 | **Testing & CI** |||
 | 40 | Unit tests for models | ⬜ TODO |
 | 41 | Widget tests for Timeline & CalendarStrip | ⬜ TODO |

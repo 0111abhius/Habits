@@ -7,7 +7,7 @@ import '../widgets/habit_tracker.dart';
 import '../main.dart';  // Import for getFirestore()
 import 'package:intl/intl.dart';
 import 'dart:async';
-import '../utils/categories.dart';
+import '../utils/activities.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -18,13 +18,13 @@ class TimelineScreen extends StatefulWidget {
 
 class _TimelineScreenState extends State<TimelineScreen> {
   DateTime selectedDate = DateTime.now();
-  static const List<String> _protectedCategories = ['Sleep'];
-  List<String> _categories = List.from(kDefaultCategories);
+  static const List<String> _protectedActivities = ['Sleep'];
+  List<String> _activities = List.from(kDefaultActivities);
 
-  String _displayLabel(String cat) => displayCategory(cat);
+  String _displayLabel(String act) => displayActivity(act);
 
-  List<String> _archivedCategories = []; // categories removed from active but kept for history
-  Map<String, List<String>> _subCategories = {}; // parent -> list of subs
+  List<String> _archivedActivities = []; // Activities removed from active but kept for history
+  Map<String, List<String>> _subActivities = {}; // parent -> list of subs
 
   TimeOfDay? wakeTime;
   TimeOfDay? sleepTime;
@@ -125,7 +125,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       final id = _docId(start);
 
       if (shouldSleep) {
-        // ensure a placeholder exists but DO NOT override if user already set another category
+        // ensure a placeholder exists but DO NOT override if user already set another activity
         if (existing == null) {
           final newEntry = TimelineEntry(
             id: id,
@@ -133,18 +133,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
             date: selectedDate,
             startTime: start,
             endTime: start.add(const Duration(hours: 1)),
-            category: 'Sleep',
+            activity: 'Sleep',
             notes: '',
           );
           await entriesColl.doc(id).set(newEntry.toMap(), SetOptions(merge: true));
-        } else if (existing.category.isEmpty) {
+        } else if (existing.activity.isEmpty) {
           // only auto-fill if user hasn't picked something yet
-          await entriesColl.doc(existing.id).update({'category': 'Sleep'});
+          await entriesColl.doc(existing.id).update({'activity': 'Sleep'});
         }
       } else {
         // should NOT be sleep
-        if (existing != null && existing.category == 'Sleep') {
-          await entriesColl.doc(existing.id).update({'category': ''});
+        if (existing != null && existing.activity == 'Sleep') {
+          await entriesColl.doc(existing.id).update({'activity': ''});
         }
       }
     }
@@ -170,14 +170,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
           _wakeTimeController.text = wakeTxt;
           sleepTime = _parseTime(sleepTxt);
           wakeTime = _parseTime(wakeTxt);
-          _categories = List<String>.from(data['customCategories'] ?? []);
-          _archivedCategories = List<String>.from(data['archivedCategories'] ?? []);
-          _subCategories = (data['subCategories'] as Map<String, dynamic>? ?? {})
+          _activities = List<String>.from(data['customActivities'] ?? []);
+          _archivedActivities = List<String>.from(data['archivedActivities'] ?? []);
+          _subActivities = (data['subActivities'] as Map<String, dynamic>? ?? {})
               .map((k, v) => MapEntry(k, List<String>.from(v as List)));
           _dedupCats();
           // ensure 'Sleep' is always present
-          if (!_categories.contains('Sleep')) {
-            _categories.insert(0,'Sleep');
+          if (!_activities.contains('Sleep')) {
+            _activities.insert(0,'Sleep');
           }
         });
 
@@ -188,15 +188,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
         await settingsRef.set({
           'sleepTime': '23:00',
           'wakeTime': '7:00',
-          'customCategories': ['Work', 'Personal', 'Health', 'Other'],
-          'archivedCategories': [],
+          'customActivities': ['Work', 'Personal', 'Health', 'Other'],
+          'archivedActivities': [],
           'lastUpdated': FieldValue.serverTimestamp(),
         });
         setState(() {
           _sleepTimeController.text = '23:00';
           _wakeTimeController.text = '7:00';
-          _categories = List.from(kDefaultCategories);
-          _archivedCategories = [];
+          _activities = List.from(kDefaultActivities);
+          _archivedActivities = [];
           _dedupCats();
         });
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
@@ -294,7 +294,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       date: selectedDate,
       startTime: start,
       endTime: start.add(const Duration(hours: 1)),
-      category: 'Sleep',
+      activity: 'Sleep',
       notes: '',
     );
     final entriesColl = getFirestore()
@@ -335,8 +335,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 case 'sleep':
                   _showSleepDialog(context);
                   break;
-                case 'categories':
-                  _showCategoriesDialog(context);
+                case 'Activities':
+                  _showActivitiesDialog(context);
                   break;
                 case 'habits':
                   Navigator.pushNamed(context, '/habits');
@@ -356,10 +356,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 ),
               ),
               PopupMenuItem(
-                value: 'categories',
+                value: 'Activities',
                 child: ListTile(
                   leading: const Icon(Icons.label),
-                  title: const Text('Categories'),
+                  title: const Text('Activities'),
                 ),
               ),
               PopupMenuItem(
@@ -482,7 +482,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     // the server) then re-use the previously rendered list instead
     // of forcing a full rebuild. This significantly reduces the
     // visible flicker that occurred while typing or selecting
-    // categories because every local write triggered a rebuild of
+    // Activities because every local write triggered a rebuild of
     // the entire timeline.
     final bool onlyLocalUpdates = (snapshot.data != null &&
         snapshot.data!.docChanges.isNotEmpty &&
@@ -561,7 +561,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
             date: selectedDate,
             startTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute),
             endTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute).add(Duration(minutes: minute==0?60:30)),
-            category: '',
+            activity: '',
             notes: '',
           );
         }
@@ -578,7 +578,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
               )
             : null;
 
-        final bool isSleepRow = entry00.category == 'Sleep';
+        final bool isSleepRow = entry00.activity == 'Sleep';
         final container= Container(
           margin: const EdgeInsets.symmetric(horizontal:8,vertical:3),
           decoration: BoxDecoration(
@@ -617,7 +617,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  Future<void> _updateEntry(TimelineEntry entry, String category, String notes, {bool isPlan=false}) async {
+  Future<void> _updateEntry(TimelineEntry entry, String activity, String notes, {bool isPlan=false}) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -635,9 +635,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
         date: entry.date,
         startTime: entry.startTime,
         endTime: entry.endTime,
-        planCategory: isPlan ? category : entry.planCategory,
+        planactivity: isPlan ? activity : entry.planactivity,
         planNotes: isPlan ? notes : entry.planNotes,
-        category: isPlan ? entry.category : category,
+        activity: isPlan ? entry.activity : activity,
         notes: isPlan ? entry.notes : notes,
       );
 
@@ -716,13 +716,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
       },
     );
 
-    // Rebuild timeline to reflect any category changes made inside the dialog
+    // Rebuild timeline to reflect any activity changes made inside the dialog
     if (mounted && result != null) {
       setState(() {});
     }
   }
 
-  Future<void> _showCategoriesDialog(BuildContext context) async {
+  Future<void> _showActivitiesDialog(BuildContext context) async {
     final TextEditingController addCatController = TextEditingController();
 
     await showDialog(
@@ -739,14 +739,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('Categories', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      const Text('Activities', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 16),
                       Row(
                         children: [
                           Expanded(
                             child: TextField(
                               controller: addCatController,
-                              decoration: const InputDecoration(labelText: 'Add category'),
+                              decoration: const InputDecoration(labelText: 'Add activity'),
                             ),
                           ),
                           IconButton(
@@ -755,8 +755,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
                               final newCat = addCatController.text.trim();
                               if (newCat.isEmpty) return;
                               setDialogState(() {
-                                _categories.add(newCat);
-                                _archivedCategories.remove(newCat); // ensure it's active
+                                _activities.add(newCat);
+                                _archivedActivities.remove(newCat); // ensure it's active
                                 _dedupCats();
                               });
                               addCatController.clear();
@@ -770,11 +770,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
                         constraints: const BoxConstraints(maxHeight: 300),
                         child: ListView.builder(
                           shrinkWrap: true,
-                          itemCount: _categories.length,
+                          itemCount: _activities.length,
                           itemBuilder: (context, index) {
-                            final parent = _categories[index];
-                            final subs = _subCategories[parent] ?? [];
-                            final isDefault = _protectedCategories.contains(parent);
+                            final parent = _activities[index];
+                            final subs = _subActivities[parent] ?? [];
+                            final isDefault = _protectedActivities.contains(parent);
                             final TextEditingController subCtrl = TextEditingController();
                             return ExpansionTile(
                               title: Text(_displayLabel(parent)),
@@ -784,11 +784,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                       icon: const Icon(Icons.delete),
                                       onPressed: () async {
                                         setDialogState(() {
-                                          _categories.remove(parent);
-                                          if (!_archivedCategories.contains(parent)) {
-                                            _archivedCategories.add(parent);
+                                          _activities.remove(parent);
+                                          if (!_archivedActivities.contains(parent)) {
+                                            _archivedActivities.add(parent);
                                           }
-                                          // keep subCategories map intact so past subs remain
+                                          // keep subActivities map intact so past subs remain
                                           _dedupCats();
                                         });
                                         await _saveSettings(refreshTimeline: true);
@@ -804,7 +804,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                           IconButton(
                                             icon: const Icon(Icons.delete_outline),
                                             onPressed: () async {
-                                              await _removeSubCategory(parent, s);
+                                              await _removeSubactivity(parent, s);
                                               setDialogState(() {});
                                             },
                                           ),
@@ -818,7 +818,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                       Expanded(
                                         child: TextField(
                                           controller: subCtrl,
-                                          decoration: const InputDecoration(labelText: 'Add sub-category'),
+                                          decoration: const InputDecoration(labelText: 'Add sub-activity'),
                                         ),
                                       ),
                                       IconButton(
@@ -826,7 +826,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                         onPressed: () async {
                                           final sub = subCtrl.text.trim();
                                           if (sub.isEmpty) return;
-                                          await _addSubCategory(parent, sub);
+                                          await _addSubactivity(parent, sub);
                                           subCtrl.clear();
                                           setDialogState(() {});
                                         },
@@ -875,9 +875,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
       await settingsRef.set({
         'sleepTime': _sleepTimeController.text,
         'wakeTime': _wakeTimeController.text,
-        'customCategories': _categories,
-        'archivedCategories': _archivedCategories,
-        'subCategories': _subCategories,
+        'customActivities': _activities,
+        'archivedActivities': _archivedActivities,
+        'subActivities': _subActivities,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -888,8 +888,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
             sleepTime = newSleep;
             wakeTime = newWake;
           }
-          // ensure categories list refreshes in timeline & dropdown
-          _categories = List<String>.from(_categories);
+          // ensure Activities list refreshes in timeline & dropdown
+          _activities = List<String>.from(_activities);
         });
 
         if (timesChanged) {
@@ -915,8 +915,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
   String _fmt24(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   void _dedupCats() {
-    _categories = _categories.toSet().toList();
-    _archivedCategories = _archivedCategories.toSet().toList();
+    _activities = _activities.toSet().toList();
+    _archivedActivities = _archivedActivities.toSet().toList();
   }
 
   Future<void> _toggleSplit(int hour) async {
@@ -949,7 +949,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         date: selectedDate,
         startTime: halfStart,
         endTime: halfStart.add(const Duration(minutes: 30)),
-        category: '',
+        activity: '',
         notes: '',
       );
       await entriesColl.doc(halfDocId).set(newEntry.toMap());
@@ -976,16 +976,16 @@ class _TimelineScreenState extends State<TimelineScreen> {
       controller.selection = TextSelection.collapsed(offset: controller.text.length);
     }
 
-    // Pre-compute flattened categories once to avoid redundant work and help with value validation
-    final availableCategories = _flattenCats();
-    // Always ensure current entry's category is available for its own dropdown
-    void _ensureValue(String v){if(v.isNotEmpty && !availableCategories.contains(v)){availableCategories.add(v);} }
-    _ensureValue(entry.category);
-    _ensureValue(entry.planCategory);
+    // Pre-compute flattened Activities once to avoid redundant work and help with value validation
+    final availableActivities = _flattenCats();
+    // Always ensure current entry's activity is available for its own dropdown
+    void _ensureValue(String v){if(v.isNotEmpty && !availableActivities.contains(v)){availableActivities.add(v);} }
+    _ensureValue(entry.activity);
+    _ensureValue(entry.planactivity);
 
     final String? dropdownValue =
-        (entry.category.isNotEmpty && availableCategories.contains(entry.category))
-            ? entry.category
+        (entry.activity.isNotEmpty && availableActivities.contains(entry.activity))
+            ? entry.activity
             : null;
 
     final planNoteCtrl = _noteControllers.putIfAbsent('p_'+key, ()=> TextEditingController(text: entry.planNotes));
@@ -1009,15 +1009,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children:[
             DropdownButton<String>(
-              value: entry.planCategory.isEmpty?null:entry.planCategory,
+              value: entry.planactivity.isEmpty?null:entry.planactivity,
               hint: const Text('Plan'),
               isExpanded: true,
               items: [const DropdownMenuItem(value: '__custom', child: Text('Custom…'))]
-                  ..addAll(availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList()),
+                  ..addAll(availableActivities.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList()),
               onChanged:(val) async {
                 if(val==null) return;
                 if(val=='__custom'){
-                  final custom = await _promptCustomCategory();
+                  final custom = await _promptCustomactivity();
                   if(custom!=null && custom.isNotEmpty){
                     _updateEntry(entry, custom, entry.planNotes, isPlan:true);
                   }
@@ -1032,7 +1032,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
               decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
               onChanged:(val){
                 _noteDebouncers['p_'+key]?.cancel();
-                _noteDebouncers['p_'+key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.planCategory, val,isPlan:true);_noteDebouncers.remove('p_'+key);});
+                _noteDebouncers['p_'+key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.planactivity, val,isPlan:true);_noteDebouncers.remove('p_'+key);});
               },
             ),
           ]),
@@ -1053,11 +1053,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
               hint: const Text('Retro'),
               isExpanded: true,
               items: [const DropdownMenuItem(value: '__custom', child: Text('Custom…'))]
-                  ..addAll(availableCategories.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList()),
+                  ..addAll(availableActivities.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList()),
               onChanged:(val) async {
                 if(val==null) return;
                 if(val=='__custom'){
-                  final custom = await _promptCustomCategory();
+                  final custom = await _promptCustomactivity();
                   if(custom!=null && custom.isNotEmpty){
                     _updateEntry(entry, custom, entry.notes);
                   }
@@ -1072,7 +1072,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
               decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
               onChanged:(val){
                 _noteDebouncers[key]?.cancel();
-                _noteDebouncers[key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.category, val);_noteDebouncers.remove(key);});
+                _noteDebouncers[key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.activity, val);_noteDebouncers.remove(key);});
               },
             ),
           ]),
@@ -1115,16 +1115,16 @@ class _TimelineScreenState extends State<TimelineScreen> {
     _dayCompleteNotifier.value = val;
   }
 
-  // ---------- Sub-category helpers ----------
-  Future<void> _addSubCategory(String parent, String sub) async {
+  // ---------- Sub-activity helpers ----------
+  Future<void> _addSubactivity(String parent, String sub) async {
     if (sub.trim().isEmpty) return;
-    if (!_categories.contains(parent)) {
-      _categories.add(parent);
+    if (!_activities.contains(parent)) {
+      _activities.add(parent);
     }
-    final list = _subCategories[parent] ?? <String>[];
+    final list = _subActivities[parent] ?? <String>[];
     if (!list.contains(sub)) {
       list.add(sub);
-      _subCategories[parent] = list;
+      _subActivities[parent] = list;
       await _saveSettings(refreshTimeline: true);
 
       final double offset=_scrollController.hasClients?_scrollController.offset:0;
@@ -1137,14 +1137,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
   }
 
-  Future<void> _removeSubCategory(String parent, String sub) async {
-    final list = _subCategories[parent];
+  Future<void> _removeSubactivity(String parent, String sub) async {
+    final list = _subActivities[parent];
     if (list == null) return;
     list.remove(sub);
     if (list.isEmpty) {
-      _subCategories.remove(parent);
+      _subActivities.remove(parent);
     } else {
-      _subCategories[parent] = list;
+      _subActivities[parent] = list;
     }
     await _saveSettings(refreshTimeline: true);
     final double offset=_scrollController.hasClients?_scrollController.offset:0;
@@ -1186,18 +1186,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
       final hour = int.parse(doc.id.substring(0, 2));
       final minute = int.parse(doc.id.substring(2));
       final key = _noteKey(hour, minute);
-      final tmplPlanCat = doc['planCategory'] ?? doc['category'] ?? '';
+      final tmplPlanCat = doc['planactivity'] ?? doc['activity'] ?? '';
       final tmplPlanNotes = doc['planNotes'] ?? doc['notes'] ?? '';
-      final tmplRetroCat = (doc['category'] ?? '') == 'Sleep' ? 'Sleep' : '';
+      final tmplRetroCat = (doc['activity'] ?? '') == 'Sleep' ? 'Sleep' : '';
       final tmplRetroNotes = tmplRetroCat.isNotEmpty ? (doc['notes'] ?? '') : '';
 
       if (existingMap.containsKey(key)) {
         final existing = existingMap[key]!;
         final Map<String,dynamic> upd={};
-        if(existing.planCategory.isEmpty){
-          upd['planCategory']=tmplPlanCat; upd['planNotes']=tmplPlanNotes; }
-        if(tmplRetroCat.isNotEmpty && existing.category.isEmpty){
-          upd['category']=tmplRetroCat; upd['notes']=tmplRetroNotes; }
+        if(existing.planactivity.isEmpty){
+          upd['planactivity']=tmplPlanCat; upd['planNotes']=tmplPlanNotes; }
+        if(tmplRetroCat.isNotEmpty && existing.activity.isEmpty){
+          upd['activity']=tmplRetroCat; upd['notes']=tmplRetroNotes; }
         if(upd.isNotEmpty){batch.update(entriesColl.doc(existing.id),upd);}        
         continue;
       }
@@ -1209,9 +1209,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
         date: selectedDate,
         startTime: start,
         endTime: start.add(Duration(minutes: minute == 0 ? 60 : 30)),
-        planCategory: tmplPlanCat,
+        planactivity: tmplPlanCat,
         planNotes: tmplPlanNotes,
-        category: tmplRetroCat,
+        activity: tmplRetroCat,
         notes: tmplRetroNotes,
       );
       batch.set(entriesColl.doc(newEntry.id), newEntry.toMap());
@@ -1223,19 +1223,19 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final flatSet = <String>{};
     void addParent(String parent) {
       flatSet.add(parent);
-      final subs = _subCategories[parent] ?? [];
+      final subs = _subActivities[parent] ?? [];
       for (final s in subs) {
         flatSet.add('$parent / $s');
       }
     }
 
-    for (final parent in _categories) {
+    for (final parent in _activities) {
       addParent(parent);
     }
 
     final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     if (selectedDate.isBefore(today)) {
-      for (final parent in _archivedCategories) {
+      for (final parent in _archivedActivities) {
         addParent(parent);
       }
     }
@@ -1243,16 +1243,16 @@ class _TimelineScreenState extends State<TimelineScreen> {
     return flatSet.toList();
   }
 
-  Future<String?> _promptCustomCategory() async {
+  Future<String?> _promptCustomactivity() async {
     final TextEditingController ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Custom category'),
+        title: const Text('Custom activity'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Enter category'),
+          decoration: const InputDecoration(hintText: 'Enter activity'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),

@@ -4,13 +4,13 @@ class UserSettings {
   final String userId;
   final TimeOfDay sleepTime;
   final TimeOfDay wakeTime;
-  final List<String> customCategories;
+  final List<String> customActivities;
 
   UserSettings({
     required this.userId,
     required this.sleepTime,
     required this.wakeTime,
-    this.customCategories = const [],
+    this.customActivities = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -18,7 +18,7 @@ class UserSettings {
       'userId': userId,
       'sleepTime': '${sleepTime.hour.toString().padLeft(2, '0')}:${sleepTime.minute.toString().padLeft(2, '0')}',
       'wakeTime': '${wakeTime.hour.toString().padLeft(2, '0')}:${wakeTime.minute.toString().padLeft(2, '0')}',
-      'customCategories': customCategories,
+      'customActivities': customActivities,
     };
   }
 
@@ -36,20 +36,20 @@ class UserSettings {
         hour: int.parse(wakeTimeParts[0]),
         minute: int.parse(wakeTimeParts[1]),
       ),
-      customCategories: List<String>.from(map['customCategories'] ?? []),
+      customActivities: List<String>.from(map['customActivities'] ?? []),
     );
   }
 
   UserSettings copyWith({
     TimeOfDay? sleepTime,
     TimeOfDay? wakeTime,
-    List<String>? customCategories,
+    List<String>? customActivities,
   }) {
     return UserSettings(
       userId: userId,
       sleepTime: sleepTime ?? this.sleepTime,
       wakeTime: wakeTime ?? this.wakeTime,
-      customCategories: customCategories ?? this.customCategories,
+      customActivities: customActivities ?? this.customActivities,
     );
   }
 } 

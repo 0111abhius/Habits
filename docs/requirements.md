@@ -14,8 +14,8 @@ Habit Logger is a cross-platform Flutter mobile application that helps users log
 
 2. **Timeline Logging**
    - Display one-hour blocks for the selected day (00 → 23).
-   - Contains a setting page that allows user to: pick sleep and wake up time and select categories they want to log. Basic categories should be pre created like (Sleep, Work, Exercise, Study, Social, Hobby, Other)
-   - Allow the user to pick a _category_ from defined options (Sleep, Work, Exercise, Study, Social, Hobby, Other) for each block.
+   - Contains a setting page that allows user to: pick sleep and wake up time and select Activities they want to log. Basic Activities should be pre created like (Sleep, Work, Exercise, Study, Social, Hobby, Other)
+   - Allow the user to pick a _activity_ from defined options (Sleep, Work, Exercise, Study, Social, Hobby, Other) for each block.
    - Provide a multiline _notes_ field for each block, editable inline.
    - Autosave changes to Firestore instantly (no separate Save button per block).
    - Autofill Sleep blocks based on user Sleep/Wake settings.
@@ -32,8 +32,8 @@ Habit Logger is a cross-platform Flutter mobile application that helps users log
 
 4. **Settings**
    - Sleep & Wake time pickers (TimeOfDay widgets).
-   - Store settings under `user_settings/{uid}` in Firestore (keys: `sleepTime`, `wakeTime`, `customCategories`).
-   - create a list of categries with pre filled categories.
+   - Store settings under `user_settings/{uid}` in Firestore (keys: `sleepTime`, `wakeTime`, `customActivities`).
+   - create a list of categries with pre filled Activities.
    - When dialog opens current values are pre-loaded.
 
 5. **Navigation**
@@ -49,7 +49,7 @@ Habit Logger is a cross-platform Flutter mobile application that helps users log
        date: Timestamp,    // midnight of the day
        startTime: Timestamp,
        endTime: Timestamp,
-       category: string,
+       activity: string,
        notes: string
      }
      ```
@@ -68,7 +68,7 @@ Habit Logger is a cross-platform Flutter mobile application that helps users log
      {
        sleepTime: "HH:mm",
        wakeTime:  "HH:mm",
-       customCategories: List<string>
+       customActivities: List<string>
      }
      ```
 
@@ -111,9 +111,9 @@ Habit Logger is a cross-platform Flutter mobile application that helps users log
    - 24 cards (hour blocks).
    - Each card shows:
      - Time label (HH:00)
-     - Category dropdown
+     - activity dropdown
      - Notes TextField (max 2 lines)
-   - Border colour changes when a category is selected.
+   - Border colour changes when a activity is selected.
    - When screen opens it auto-scrolls so that Wake Time card is visible.
 3. **Settings Icon** in App Bar (quick access to sleep settings).
 
@@ -135,4 +135,4 @@ Habit Logger is a cross-platform Flutter mobile application that helps users log
 3. Advanced analytics dashboard (charts).
 4. Push notifications for habit reminders.
 5. Internationalisation using `intl`.
-6. Custom categories management UI. 
+6. Custom Activities management UI. 
