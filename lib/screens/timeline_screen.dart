@@ -8,6 +8,7 @@ import '../main.dart';  // Import for getFirestore()
 import 'package:intl/intl.dart';
 import 'dart:async';
 import '../utils/activities.dart';
+import '../widgets/activity_picker.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -63,6 +64,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   static final Map<String, double> _offsetCache = {}; // keyed by yyyy-MM-dd (selected date)
   late String _currentDateKey;
+
+  List<String> _recentActivities = [];
 
   @override
   void initState() {
@@ -170,7 +173,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
           _wakeTimeController.text = wakeTxt;
           sleepTime = _parseTime(sleepTxt);
           wakeTime = _parseTime(wakeTxt);
-          _activities = List<String>.from(data['customActivities'] ?? []);
+          final List<String> customActs = List<String>.from(data['customActivities'] ?? []);
+          _recentActivities = List<String>.from(data['recentActivities'] ?? []);
+          // Always include the built-in defaults, then any user custom ones
+          _activities = [
+            ...kDefaultActivities,
+            ...customActs,
+          ];
           _archivedActivities = List<String>.from(data['archivedActivities'] ?? []);
           _subActivities = (data['subActivities'] as Map<String, dynamic>? ?? {})
               .map((k, v) => MapEntry(k, List<String>.from(v as List)));
@@ -188,8 +197,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
         await settingsRef.set({
           'sleepTime': '23:00',
           'wakeTime': '7:00',
-          'customActivities': ['Work', 'Personal', 'Health', 'Other'],
+          // Start with no custom activities; built-in defaults are always present client-side
+          'customActivities': [],
           'archivedActivities': [],
+          'recentActivities': [],
           'lastUpdated': FieldValue.serverTimestamp(),
         });
         setState(() {
@@ -197,6 +208,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
           _wakeTimeController.text = '7:00';
           _activities = List.from(kDefaultActivities);
           _archivedActivities = [];
+          _recentActivities = [];
           _dedupCats();
         });
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
@@ -872,12 +884,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
       final newWake = _toTod(_wakeTimeController.text);
       final bool timesChanged = prevSleep != newSleep || prevWake != newWake;
 
+      // Persist only activities that are not part of the built-in defaults
+      final Set<String> defaultSet = Set.of(kDefaultActivities);
+      final List<String> customOnly = _activities.where((a) => !defaultSet.contains(a)).toList();
+
       await settingsRef.set({
         'sleepTime': _sleepTimeController.text,
         'wakeTime': _wakeTimeController.text,
-        'customActivities': _activities,
+        'customActivities': customOnly,
         'archivedActivities': _archivedActivities,
         'subActivities': _subActivities,
+        'recentActivities': _recentActivities,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -1008,23 +1025,35 @@ class _TimelineScreenState extends State<TimelineScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children:[
-            DropdownButton<String>(
-              value: entry.planactivity.isEmpty?null:entry.planactivity,
-              hint: const Text('Plan'),
-              isExpanded: true,
-              items: [const DropdownMenuItem(value: '__custom', child: Text('Custom…'))]
-                  ..addAll(availableActivities.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList()),
-              onChanged:(val) async {
-                if(val==null) return;
-                if(val=='__custom'){
+            OutlinedButton(
+              onPressed: () async {
+                final picked = await showActivityPicker(
+                  context: context,
+                  allActivities: availableActivities,
+                  recent: _recentActivities,
+                );
+                if (picked == null) return;
+                if (picked == '__custom') {
                   final custom = await _promptCustomactivity();
-                  if(custom!=null && custom.isNotEmpty){
-                    _updateEntry(entry, custom, entry.planNotes, isPlan:true);
+                  if (custom != null && custom.isNotEmpty) {
+                    _updateRecent(custom);
+                    _updateEntry(entry, custom, entry.planNotes, isPlan: true);
                   }
-                }else{
-                  _updateEntry(entry,val,entry.planNotes,isPlan:true);
+                } else {
+                  _updateRecent(picked);
+                  _updateEntry(entry, picked, entry.planNotes, isPlan: true);
                 }
               },
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  entry.planactivity.isEmpty ? 'Plan' : _displayLabel(entry.planactivity),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
             TextField(
               controller: planNoteCtrl,
@@ -1038,45 +1067,73 @@ class _TimelineScreenState extends State<TimelineScreen> {
           ]),
         ));
 
-    Widget retroColumn = Expanded(
-      child: Container(
-        decoration: BoxDecoration(
-          color: _retroBg(context),
-          borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)),
-        ),
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children:[
-            DropdownButton<String>(
-              value: dropdownValue,
-              hint: const Text('Retro'),
-              isExpanded: true,
-              items: [const DropdownMenuItem(value: '__custom', child: Text('Custom…'))]
-                  ..addAll(availableActivities.map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c), overflow: TextOverflow.ellipsis))).toList()),
-              onChanged:(val) async {
-                if(val==null) return;
-                if(val=='__custom'){
-                  final custom = await _promptCustomactivity();
-                  if(custom!=null && custom.isNotEmpty){
-                    _updateEntry(entry, custom, entry.notes);
-                  }
-                }else{
-                  _updateEntry(entry,val,entry.notes);
+    Widget retroColumn = Container(
+      decoration: BoxDecoration(
+        color: _retroBg(context),
+        borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)),
+      ),
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children:[
+          OutlinedButton(
+            onPressed: () async {
+              final picked = await showActivityPicker(
+                context: context,
+                allActivities: availableActivities,
+                recent: _recentActivities,
+              );
+              if (picked == null) return;
+              if (picked == '__custom') {
+                final custom = await _promptCustomactivity();
+                if (custom != null && custom.isNotEmpty) {
+                  _updateRecent(custom);
+                  _updateEntry(entry, custom, entry.notes);
                 }
-              },
+              } else {
+                _updateRecent(picked);
+                _updateEntry(entry, picked, entry.notes);
+              }
+            },
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
             ),
-            TextField(
-              controller: retroNoteCtrl,
-              maxLines:null,
-              decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
-              onChanged:(val){
-                _noteDebouncers[key]?.cancel();
-                _noteDebouncers[key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.activity, val);_noteDebouncers.remove(key);});
-              },
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                dropdownValue == null ? 'Retro' : _displayLabel(dropdownValue),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ]),
-        ));
+          ),
+          TextField(
+            controller: retroNoteCtrl,
+            maxLines:null,
+            decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
+            onChanged:(val){
+              _noteDebouncers[key]?.cancel();
+              _noteDebouncers[key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.activity, val);_noteDebouncers.remove(key);});
+            },
+          ),
+        ]),
+      );
+
+    final bool canCopy = entry.planactivity.isNotEmpty && entry.planactivity != entry.activity;
+
+    final retroWithCopy = Stack(
+      children: [
+        retroColumn,
+        if (canCopy)
+          Positioned(
+            top: 4,
+            right: 4,
+            child: InkWell(
+              onTap: () => _updateEntry(entry, entry.planactivity, entry.notes),
+              child: Icon(Icons.copy_all, size: 16, color: Theme.of(context).colorScheme.primary),
+            ),
+          ),
+      ],
+    );
 
     return KeyedSubtree(
       key: subKey,
@@ -1084,13 +1141,19 @@ class _TimelineScreenState extends State<TimelineScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         child: ValueListenableBuilder<bool>(
           valueListenable: _showRetroNotifier,
-          builder: (context, showRetro, _) => Row(
-            children: [
-              planColumn,
-              if (showRetro) const SizedBox(width: 2),
-              if (showRetro) retroColumn,
-            ],
-          ),
+          builder: (context, showRetro, _) {
+            if (!showRetro) {
+              return Row(children: [planColumn]);
+            }
+
+            return Row(
+              children: [
+                planColumn,
+                const SizedBox(width: 4),
+                Expanded(child: retroWithCopy),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1260,5 +1323,20 @@ class _TimelineScreenState extends State<TimelineScreen> {
         ],
       ),
     );
+  }
+
+  void _updateRecent(String act) {
+    _recentActivities.remove(act);
+    _recentActivities.insert(0, act);
+    if (_recentActivities.length > 8) {
+      _recentActivities = _recentActivities.sublist(0, 8);
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      getFirestore()
+          .collection('user_settings')
+          .doc(user.uid)
+          .set({'recentActivities': _recentActivities}, SetOptions(merge: true));
+    }
   }
 } 
