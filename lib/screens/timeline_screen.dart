@@ -1166,15 +1166,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
       final key = _noteKey(hour, minute);
       final tmplPlanCat = doc['planCategory'] ?? doc['category'] ?? '';
       final tmplPlanNotes = doc['planNotes'] ?? doc['notes'] ?? '';
-      final tmplRetroCat = doc['category'] ?? tmplPlanCat;
-      final tmplRetroNotes = doc['notes'] ?? tmplPlanNotes;
+      final tmplRetroCat = (doc['category'] ?? '') == 'Sleep' ? 'Sleep' : '';
+      final tmplRetroNotes = tmplRetroCat.isNotEmpty ? (doc['notes'] ?? '') : '';
 
       if (existingMap.containsKey(key)) {
         final existing = existingMap[key]!;
         final Map<String,dynamic> upd={};
         if(existing.planCategory.isEmpty){
           upd['planCategory']=tmplPlanCat; upd['planNotes']=tmplPlanNotes; }
-        if(existing.category.isEmpty){
+        if(tmplRetroCat.isNotEmpty && existing.category.isEmpty){
           upd['category']=tmplRetroCat; upd['notes']=tmplRetroNotes; }
         if(upd.isNotEmpty){batch.update(entriesColl.doc(existing.id),upd);}        
         continue;

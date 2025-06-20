@@ -30,6 +30,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   void initState() {
     super.initState();
     _loadTemplate();
+    _loadCategories();
   }
 
   @override
@@ -151,7 +152,12 @@ class _TemplateScreenState extends State<TemplateScreen> {
           DropdownButton<String>(
             value: entry.planCategory.isEmpty ? null : entry.planCategory,
             hint: const Text('Select category'),
-            items: _flattenCats().map((c)=>DropdownMenuItem(value:c,child:Text(_displayLabel(c)))).toList(),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('— None —')),
+            ]
+              ..addAll(_flattenCats()
+                  .map((c) => DropdownMenuItem(value: c, child: Text(_displayLabel(c))))
+                  .toList()),
             onChanged: (val) async {
               if (val == null) return;
               final updated = TimelineEntry(
@@ -309,16 +315,21 @@ class _TemplateScreenState extends State<TemplateScreen> {
           final start = DateTime(date.year,date.month,date.day,hour,minute);
           final id = DateFormat('yyyyMMdd_HHmm').format(start);
           final data=doc.data();
+          final tmplPlanCat = data['planCategory'] ?? data['category'] ?? '';
+          final tmplPlanNotes = data['planNotes'] ?? data['notes'] ?? '';
+          final tmplRetroCat  = (data['category'] ?? '') == 'Sleep' ? 'Sleep' : '';
+          final tmplRetroNotes = tmplRetroCat.isNotEmpty ? (data['notes'] ?? '') : '';
+
           batch.set(entriesColl.doc(id),{
             'userId':uid,
             'date':dateStr,
             'hour':hour,
             'startTime':Timestamp.fromDate(start),
             'endTime':Timestamp.fromDate(start.add(Duration(minutes:minute==0?60:30))),
-            'planCategory':data['planCategory'] ?? data['category'] ?? '',
-            'planNotes':data['planNotes'] ?? data['notes'] ?? '',
-            'category':data['category'] ?? '',
-            'notes':data['notes'] ?? '',
+            'planCategory':tmplPlanCat,
+            'planNotes':tmplPlanNotes,
+            'category':tmplRetroCat,
+            'notes':tmplRetroNotes,
           });
         }
         await batch.commit();
@@ -329,5 +340,19 @@ class _TemplateScreenState extends State<TemplateScreen> {
     }finally{
       if(mounted) setState(()=>_pushing=false);
     }
+  }
+
+  Future<void> _loadCategories() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final doc = await getFirestore().collection('user_settings').doc(uid).get();
+    if (!doc.exists) return;
+    final data = doc.data()!;
+    final List<String> custom = List<String>.from(data['customCategories'] ?? []);
+    final List<String> archived = List<String>.from(data['archivedCategories'] ?? []);
+    final Set<String> all = {...kDefaultCategories, ...custom}..removeAll(archived);
+    setState(() {
+      _categories = all.toList();
+    });
   }
 } 
