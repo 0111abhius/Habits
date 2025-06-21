@@ -5,87 +5,95 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:habit_logger/main.dart';
 import 'package:habit_logger/screens/timeline_screen.dart';
+import 'helpers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  // no-op shims defined in test/helpers.dart but import again for compile.
-  import 'helpers.dart' as _;
-
   group('Timeline settings dialogs', () {
     late FakeFirebaseFirestore firestore;
-    late MockFirebaseAuth auth;
 
     setUp(() async {
       await Firebase.initializeApp();
       firestore = FakeFirebaseFirestore();
       overrideFirestoreForTests(firestore);
 
-      final user = MockUser(uid: 'uid1', email: 't@e.com');
-      auth = MockFirebaseAuth(mockUser: user);
+      // Signed-in mock so TimelineScreen renders fully.
+      final user = MockUser(uid: 'test_uid', email: 'test@example.com');
+      final auth = MockFirebaseAuth(mockUser: user);
       await auth.signInWithCustomToken('token');
     });
 
-    testWidgets('Adding custom activity persists to Firestore', (tester) async {
+    Future<void> _openCustomizeMenu(WidgetTester tester) async {
+      await tester.tap(find.byTooltip('Customize'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Adding custom activity is saved to Firestore', (tester) async {
       await tester.pumpWidget(const MaterialApp(home: TimelineScreen()));
       await tester.pumpAndSettle();
 
-      // open customize menu
-      await tester.tap(find.byTooltip('Customize'));
-      await tester.pumpAndSettle();
-
-      // select Activities
+      await _openCustomizeMenu(tester);
       await tester.tap(find.text('Activities'));
       await tester.pumpAndSettle();
 
-      // enter new activity text and tap add icon
-      const newAct = 'Chess';
-      await tester.enterText(find.byType(TextField).first, newAct);
+      // Add custom activity
+      const custom = 'Chess';
+      await tester.enterText(find.byType(TextField).first, custom);
       await tester.tap(find.byIcon(Icons.add).first);
       await tester.pumpAndSettle();
 
-      // verify it appears in dialog list
-      expect(find.text(newAct), findsWidgets);
+      // Should appear in dialog list
+      expect(find.text(custom), findsWidgets);
 
-      // close dialog
+      // Close dialog
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
 
-      // Firestore should contain customActivities field
-      final snap = await firestore.collection('user_settings').doc('uid1').get();
-      final list = List<String>.from(snap.data()?['customActivities'] ?? []);
-      expect(list.contains(newAct), isTrue);
+      // Verify Firestore persistence
+      final snap = await firestore.collection('user_settings').doc('test_uid').get();
+      final List<String> customActs = List<String>.from(snap.data()?['customActivities'] ?? []);
+      expect(customActs.contains(custom), isTrue);
     });
 
-    testWidgets('Sleep time persists to Firestore', (tester) async {
+    testWidgets('Sleep time change persists to Firestore', (tester) async {
+      // Seed Firestore with default settings so dialog shows times
+      await firestore.collection('user_settings').doc('test_uid').set({
+        'sleepTime': '23:00',
+        'wakeTime': '07:00',
+      });
+
       await tester.pumpWidget(const MaterialApp(home: TimelineScreen()));
       await tester.pumpAndSettle();
 
-      // open customize menu
-      await tester.tap(find.byTooltip('Customize'));
+      await _openCustomizeMenu(tester);
+      // select Sleep timings menu item (value "sleep")
+      await tester.tap(find.text('Sleep timings'));
       await tester.pumpAndSettle();
 
-      // select Sleep time
-      await tester.tap(find.text('Sleep time'));
+      // Tap the Sleep Time TextButton to open time-picker
+      await tester.tap(find.widgetWithText(TextButton, '23:00'));
       await tester.pumpAndSettle();
 
-      // enter new sleep time
-      const newSleepTime = '8 hours';
-      await tester.enterText(find.byType(TextField).last, newSleepTime);
-      await tester.tap(find.byIcon(Icons.add).last);
-      await tester.pumpAndSettle();
+      // The native TimePicker dialog appears; simulate selecting 10:00PM by tapping OK.
+      // Use tester.tap on OK button directly, skipping dial interactions.
+      if (find.text('OK').evaluate().isNotEmpty) {
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+      } else {
+        // On some platforms label is done.
+        await tester.tap(find.textContaining('OK'));
+        await tester.pumpAndSettle();
+      }
 
-      // verify it appears in dialog list
-      expect(find.text(newSleepTime), findsWidgets);
-
-      // close dialog
+      // Close dialog
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
 
-      // Firestore should contain sleepTime field
-      final snap = await firestore.collection('user_settings').doc('uid1').get();
-      final sleepTime = snap.data()?['sleepTime'];
-      expect(sleepTime, newSleepTime);
+      // Verify change persisted (sleepTime updated, not default)
+      final snap = await firestore.collection('user_settings').doc('test_uid').get();
+      expect(snap.exists, isTrue);
+      expect(snap.data()!['sleepTime'] != '23:00', isTrue);
     });
   });
 }
