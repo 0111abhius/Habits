@@ -56,5 +56,36 @@ void main() {
       final list = List<String>.from(snap.data()?['customActivities'] ?? []);
       expect(list.contains(newAct), isTrue);
     });
+
+    testWidgets('Sleep time persists to Firestore', (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: TimelineScreen()));
+      await tester.pumpAndSettle();
+
+      // open customize menu
+      await tester.tap(find.byTooltip('Customize'));
+      await tester.pumpAndSettle();
+
+      // select Sleep time
+      await tester.tap(find.text('Sleep time'));
+      await tester.pumpAndSettle();
+
+      // enter new sleep time
+      const newSleepTime = '8 hours';
+      await tester.enterText(find.byType(TextField).last, newSleepTime);
+      await tester.tap(find.byIcon(Icons.add).last);
+      await tester.pumpAndSettle();
+
+      // verify it appears in dialog list
+      expect(find.text(newSleepTime), findsWidgets);
+
+      // close dialog
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      // Firestore should contain sleepTime field
+      final snap = await firestore.collection('user_settings').doc('uid1').get();
+      final sleepTime = snap.data()?['sleepTime'];
+      expect(sleepTime, newSleepTime);
+    });
   });
 }

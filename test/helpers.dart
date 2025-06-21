@@ -23,4 +23,8 @@ Future<FakeFirebaseFirestore> pumpWidgetWithFirestore(
   await tester.pumpWidget(MaterialApp(home: child));
   await tester.pumpAndSettle();
   return fake;
-} 
+}
+
+// ----- Stubs for old firebase_test_utils helpers (removed in Firebase 3.x) ----
+void setupFirebaseCoreMocks() {}
+void setupFirebaseAuthMocks() {} 
