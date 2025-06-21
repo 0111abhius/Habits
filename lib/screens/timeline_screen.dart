@@ -1167,15 +1167,36 @@ class _TimelineScreenState extends State<TimelineScreen> {
     _dayCompleteNotifier.value = doc.exists && (doc.data()?['complete']==true);
   }
 
-  Future<void> _setDayComplete(bool val) async{
-    final uid=FirebaseAuth.instance.currentUser?.uid; if(uid==null) return;
-    final ref=getFirestore().collection('daily_logs').doc(uid).collection('logs').doc(_dateStr(selectedDate));
-    if(val){
-      await ref.set({'date':_dateStr(selectedDate),'complete':true,'lastUpdated':FieldValue.serverTimestamp()});
-    }else{
-      await ref.delete();
-    }
+  Future<void> _setDayComplete(bool val) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    // Optimistically update UI immediately
     _dayCompleteNotifier.value = val;
+
+    final ref = getFirestore()
+        .collection('daily_logs')
+        .doc(uid)
+        .collection('logs')
+        .doc(_dateStr(selectedDate));
+
+    try {
+      if (val) {
+        await ref.set({
+          'date': _dateStr(selectedDate),
+          'complete': true,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+      } else {
+        await ref.delete();
+      }
+    } catch (e) {
+      // Revert on failure and inform user
+      _dayCompleteNotifier.value = !val;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('Could not update day status. Please try again.')),
+      );
+    }
   }
 
   // ---------- Sub-activity helpers ----------
