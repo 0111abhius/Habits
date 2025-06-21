@@ -5,9 +5,8 @@ import 'package:habit_logger/main.dart';
 import 'package:habit_logger/screens/timeline_screen.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
-import 'package:firebase_auth_platform_interface/firebase_auth_platform_interface.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
+import 'package:habit_logger/widgets/habit_tracker.dart';
 
 void main() {
   late FakeFirebaseFirestore firestore;
