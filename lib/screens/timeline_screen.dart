@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'dart:async';
 import '../utils/activities.dart';
 import '../widgets/activity_picker.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -357,6 +358,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   await Navigator.pushNamed(context, '/template');
                   if (mounted) setState(() {});
                   break;
+                case 'signout':
+                  await FirebaseAuth.instance.signOut();
+                  // On non-web, also sign out Google account to avoid auto re-auth
+                  try{ await GoogleSignIn().signOut(); } catch(_){}
+                  if (mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  }
+                  break;
               }
             },
             itemBuilder: (context) => [
@@ -386,6 +398,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 child: ListTile(
                   leading: const Icon(Icons.content_copy),
                   title: const Text('Template'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'signout',
+                child: ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Sign out'),
                 ),
               ),
             ],
@@ -428,9 +447,12 @@ class _TimelineScreenState extends State<TimelineScreen> {
           ValueListenableBuilder<bool>(
             valueListenable: _dayCompleteNotifier,
             builder: (context, done, _) => CheckboxListTile(
+              key: ValueKey(done),
               title: const Text('Day fully logged'),
               value: done,
-              onChanged: (val){ if(val!=null) _setDayComplete(val); },
+              onChanged: (val) {
+                if (val != null) _setDayComplete(val);
+              },
             ),
           ),
           ValueListenableBuilder<bool>(
