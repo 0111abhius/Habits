@@ -8,6 +8,8 @@ import 'screens/habits_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/template_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'widgets/auth_gate.dart';
 
 FirebaseFirestore? _testFirestore;
 
@@ -45,6 +47,11 @@ void main() async {
       cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
     );
     
+    // Ensure auth persistence on web so the user stays signed in across reloads.
+    if (kIsWeb) {
+      await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+    }
+    
     print('Firebase initialized successfully');
   } catch (e) {
     print('Failed to initialize Firebase: $e');
@@ -64,7 +71,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const LoginScreen(),
+      home: const AuthGate(),
       routes: {
         '/timeline': (context) => const TimelineScreen(),
         '/habits': (context) => const HabitsScreen(),
