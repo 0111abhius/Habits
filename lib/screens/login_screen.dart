@@ -16,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _isSignUp = false;
 
   @override
   void dispose() {
@@ -86,6 +87,34 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _signUpWithEmail() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const TimelineScreen()),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message ?? 'An error occurred')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -144,13 +173,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _signInWithEmail,
+                  onPressed: _isLoading
+                      ? null
+                      : (_isSignUp ? _signUpWithEmail : _signInWithEmail),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   child: _isLoading
                       ? const CircularProgressIndicator()
-                      : const Text('Sign In'),
+                      : Text(_isSignUp ? 'Sign Up' : 'Sign In'),
                 ),
                 const SizedBox(height: 16),
                 const Text(
@@ -172,6 +203,19 @@ class _LoginScreenState extends State<LoginScreen> {
                     height: 24,
                   ),
                   label: const Text('Sign in with Google'),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                          setState(() {
+                            _isSignUp = !_isSignUp;
+                          });
+                        },
+                  child: Text(_isSignUp
+                      ? 'Already have an account? Sign in'
+                      : 'No account? Create one'),
                 ),
               ],
             ),
