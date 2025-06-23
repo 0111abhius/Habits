@@ -10,6 +10,7 @@ import 'dart:async';
 import '../utils/activities.dart';
 import '../widgets/activity_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'login_screen.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
