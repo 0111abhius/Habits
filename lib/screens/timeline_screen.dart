@@ -69,6 +69,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   List<String> _recentActivities = [];
 
+  Set<String> _loggedDates = {};
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +81,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       });
     _loadUserSettings();
     _loadDayComplete();
+    _loadLoggedDates();
   }
 
   @override
@@ -444,6 +447,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
               }
             },
+            completedDates: _loggedDates,
           ),
           ValueListenableBuilder<bool>(
             valueListenable: _dayCompleteNotifier,
@@ -1210,8 +1214,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
           'complete': true,
           'lastUpdated': FieldValue.serverTimestamp(),
         });
+        _loggedDates.add(_dateStr(selectedDate));
       } else {
         await ref.delete();
+        _loggedDates.remove(_dateStr(selectedDate));
       }
     } catch (e) {
       // Revert on failure and inform user
@@ -1382,5 +1388,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
           .doc(user.uid)
           .set({'recentActivities': _recentActivities}, SetOptions(merge: true));
     }
+  }
+
+  Future<void> _loadLoggedDates() async {
+    final uid=FirebaseAuth.instance.currentUser?.uid; if(uid==null) return;
+    final today=DateTime.now();
+    final start=today.subtract(const Duration(days:7));
+    final end=today.add(const Duration(days:7));
+    final snap=await getFirestore().collection('daily_logs').doc(uid).collection('logs')
+      .where('date', isGreaterThanOrEqualTo: DateFormat('yyyy-MM-dd').format(start))
+      .where('date', isLessThanOrEqualTo: DateFormat('yyyy-MM-dd').format(end))
+      .get();
+    _loggedDates = snap.docs.map((d)=>d.id).toSet();
+    if(mounted) setState((){});
   }
 } 
