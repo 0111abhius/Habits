@@ -1162,27 +1162,36 @@ class _TimelineScreenState extends State<TimelineScreen> {
       ],
     );
 
-    return KeyedSubtree(
-      key: subKey,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: ValueListenableBuilder<bool>(
-          valueListenable: _showRetroNotifier,
-          builder: (context, showRetro, _) {
-            if (!showRetro) {
-              return Row(children: [planColumn]);
-            }
+    Widget innerRow;
+    if (!_showRetro) {
+      innerRow = Row(children: [planColumn]);
+    } else {
+      innerRow = Row(
+        children: [
+          planColumn,
+          const SizedBox(width: 4),
+          Expanded(child: retroWithCopy),
+        ],
+      );
+    }
 
-            return Row(
-              children: [
-                planColumn,
-                const SizedBox(width: 4),
-                Expanded(child: retroWithCopy),
-              ],
-            );
-          },
+    if (minute == 0) return innerRow;
+
+    final String label = DateFormat('h:mm a').format(entry.startTime);
+    final TextStyle labelStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ) ?? const TextStyle(fontSize: 13, fontWeight: FontWeight.w600);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 16.0, top: 8, bottom: 6),
+          child: Text(label, style: labelStyle),
         ),
-      ),
+        innerRow,
+      ],
     );
   }
 
