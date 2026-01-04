@@ -12,6 +12,7 @@ import '../widgets/activity_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'login_screen.dart';
 import '../widgets/timeline_hour_tile.dart';
+import 'day_planning_assistant.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -310,6 +311,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
               tooltip: showRetro ? 'Hide Retro' : 'Show Retro',
               onPressed: () => _showRetroNotifier.value = !showRetro,
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.auto_awesome),
+            tooltip: 'AI Plan',
+            onPressed: () async {
+              await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+              // Refresh settings to pick up any new activities added by AI
+              await _loadUserSettings();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.bar_chart),

@@ -31,6 +31,26 @@ Pay special attention to where my 'Actual' activity differed from my 'Planned' a
     }
     }
 
+  /// Centralized logic to robustly detect new activities from AI response.
+  /// It combines the AI's explicit 'newActivities' list with any activities found in 'schedule'
+  /// that are not present in 'existingActivities' (and not 'Sleep').
+  static List<String> detectNewActivities(Map<String, dynamic> aiResponseData, List<String> existingActivities) {
+    final schedule = Map<String, String>.from(aiResponseData['schedule'] ?? {});
+    final aiSuggestedNew = List<String>.from(aiResponseData['newActivities'] ?? []);
+    final Set<String> detectedNew = {};
+
+    // Add explicit AI suggestions
+    detectedNew.addAll(aiSuggestedNew);
+
+    // Scan schedule for any other unknown activities
+    for (final act in schedule.values) {
+      if (act.isNotEmpty && !existingActivities.contains(act) && act != 'Sleep') {
+        detectedNew.add(act);
+      }
+    }
+    return detectedNew.toList();
+  }
+
   Future<String> getTemplateSuggestions({
     required String currentTemplate,
     required String goal,
@@ -72,6 +92,52 @@ Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
       final response = await _model.generateContent(content);
       var text = response.text ?? '{}';
       // simple cleanup if model wrapped it in markdown
+      text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+      return text;
+    } catch (e) {
+      return '{"error": "$e"}';
+    }
+  }
+
+  Future<String> getDayPlanSuggestions({
+    required String currentPlan,
+    required String goal,
+    required List<String> existingActivities,
+  }) async {
+    final prompt = '''
+You are a productivity expert assisting in planning a specific day.
+The user has a specific goal for today and possibly some already planned activities.
+Please analyze the current plan (if any) and the goal, then provide specific, actionable suggestions.
+Optimize the schedule to achieve the goal while respecting existing hard commitments if they seem important (or suggest moving them if necessary).
+
+GOAL: $goal
+
+EXISTING ACTIVITIES (Strictly reuse these if they fit):
+${existingActivities.map((e) => '"$e"').join(', ')}
+
+CURRENT PLAN FOR TODAY:
+$currentPlan
+
+IMPORTANT: You must return the response in strict JSON format.
+The JSON must have this structure:
+{
+  "schedule": {
+    "08:00": "Activity Name",
+    "09:30": "Activity Name"
+  },
+  "newActivities": ["New Activity 1", "New Activity 2"],
+  "reasoning": "Explanation of the changes..."
+}
+"schedule" keys must be "HH:mm" strings (24-hour format). 
+"newActivities" should list any activities suggested that are NOT in the EXISTING ACTIVITIES list.
+"reasoning" should be a concise summary of the plan.
+Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
+''';
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await _model.generateContent(content);
+      var text = response.text ?? '{}';
       text = text.replaceAll('```json', '').replaceAll('```', '').trim();
       return text;
     } catch (e) {

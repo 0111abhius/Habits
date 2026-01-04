@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
+import '../widgets/ai_planning_dialogs.dart';
 
 import '../models/timeline_entry.dart';
 import '../main.dart';
@@ -191,7 +192,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DropdownButton<String>(
-            value: entry.planactivity.isEmpty ? null : entry.planactivity,
+            value: (entry.planactivity.isNotEmpty && (_flattenCats().contains(entry.planactivity) || entry.planactivity == '')) 
+                ? entry.planactivity 
+                : null,
             hint: const Text('Select activity'),
             items: [
               const DropdownMenuItem(value: '', child: Text('— None —')),
@@ -421,38 +424,10 @@ class _TemplateScreenState extends State<TemplateScreen> {
   }
 
   Future<void> _showAIAssistDialog() async {
-    final TextEditingController goalCtrl = TextEditingController();
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('AI Template Coach'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('What is your main goal for this day?'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: goalCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Goal (e.g., "Deep work", "Recovery")',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _generateTemplateInsights(goalCtrl.text.trim());
-            },
-            child: const Text('Get Suggestions'),
-          ),
-        ],
-      ),
-    );
+    final goal = await AIGoalDialog.show(context, title: 'AI Template Coach');
+    if (goal != null) {
+      _generateTemplateInsights(goal);
+    }
   }
 
   Future<void> _generateTemplateInsights(String goal) async {
@@ -480,9 +455,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
           _showError('AI Error: ${data['error']}');
           return;
         }
-        _showReviewDialog(data);
+        
+        // Use shared robust detection
+        data['newActivities'] = AIService.detectNewActivities(data, _activities);
+
+        AIPlanReviewDialog.show(context, data, _applyAISuggestions);
+
       } catch (e) {
-        // Fallback if not valid JSON (shouldn't happen with updated prompt, but safety first)
         _showError('Failed to parse AI response. Raw output:\n$jsonStr');
       }
     } catch (e) {
@@ -495,95 +474,6 @@ class _TemplateScreenState extends State<TemplateScreen> {
 
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  Future<void> _showReviewDialog(Map<String, dynamic> data) async {
-    final schedule = Map<String, String>.from(data['schedule'] ?? {});
-    final newActs = List<String>.from(data['newActivities'] ?? []);
-    final reasoning = data['reasoning'] ?? '';
-
-    // Track selected new activities
-    final Set<String> selectedNewActs = Set.from(newActs);
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('AI Review'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 400,
-            child: DefaultTabController(
-              length: 2,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const TabBar(
-                    labelColor: Colors.blue,
-                    tabs: [Tab(text: 'Schedule'), Tab(text: 'New Activities')],
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        // Schedule Tab
-                        SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (reasoning.isNotEmpty) ...[
-                                Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: Text('Note: $reasoning', style: const TextStyle(fontStyle: FontStyle.italic)),
-                                ),
-                                const Divider(),
-                              ],
-                              ...schedule.entries.map((e) => ListTile(
-                                dense: true,
-                                title: Text(e.key),
-                                subtitle: Text(e.value),
-                              )),
-                            ],
-                          ),
-                        ),
-                        // New Activities Tab
-                        newActs.isEmpty
-                            ? const Center(child: Text('No new activities suggested.'))
-                            : ListView(
-                                shrinkWrap: true,
-                                children: newActs.map((act) => CheckboxListTile(
-                                  title: Text(act),
-                                  value: selectedNewActs.contains(act),
-                                  onChanged: (val) {
-                                    setState(() {
-                                      if (val == true) selectedNewActs.add(act);
-                                      else selectedNewActs.remove(act);
-                                    });
-                                  },
-                                )).toList(),
-                              ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _applyAISuggestions(schedule, selectedNewActs.toList());
-              },
-              child: const Text('Apply & Save'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Future<void> _applyAISuggestions(Map<String, String> schedule, List<String> newActivities) async {
