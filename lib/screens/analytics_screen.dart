@@ -255,7 +255,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       final activity = entry.activity.isEmpty ? 'Uncategorised' : entry.activity;
       final notes = entry.notes.isNotEmpty ? ' (${entry.notes})' : '';
       
-      buffer.writeln('  $timeRange: $activity$notes');
+      String line = '  $timeRange: Actual: $activity$notes';
+      
+      // Add Plan info if available
+      if (entry.planactivity.isNotEmpty) {
+        final planAct = entry.planactivity;
+        final planNotes = entry.planNotes.isNotEmpty ? ' (${entry.planNotes})' : '';
+        line += ' | Planned: $planAct$planNotes';
+      }
+      
+      buffer.writeln(line);
     }
 
     return buffer.toString();

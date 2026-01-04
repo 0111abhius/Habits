@@ -17,7 +17,9 @@ GOAL: $goal
 ACTIVITY LOGS:
 $logs
 
-Please keep the response concise, encouraging, and focused on the goal. Analyze the time gaps and activity choices.
+Please keep the response concise, encouraging, and focused on the goal. 
+Analyze the time gaps and activity choices.
+Pay special attention to where my 'Actual' activity differed from my 'Planned' activity, and offer specific advice on how to stick to the plan better or adjust the plan to be more realistic.
 ''';
 
     try {
