@@ -2,6 +2,22 @@
 
 A new Flutter project.
 
+## Setup & Run
+
+1.  **Install Dependencies**:
+    ```bash
+    flutter pub get
+    ```
+
+2.  **Run the App**:
+    ```bash
+    flutter run
+    ```
+    To run on a specific device (e.g., Chrome):
+    ```bash
+    flutter run -d chrome
+    ```
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

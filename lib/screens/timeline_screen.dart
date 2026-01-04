@@ -11,6 +11,7 @@ import '../utils/activities.dart';
 import '../widgets/activity_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'login_screen.dart';
+import '../widgets/timeline_hour_tile.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -35,8 +36,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
   final TextEditingController _sleepTimeController = TextEditingController();
   final TextEditingController _wakeTimeController = TextEditingController();
 
-  final Map<String, TextEditingController> _noteControllers = {};
-  final Map<String, Timer> _noteDebouncers = {};
   double? _pendingScrollOffset;
 
   Set<int> _splitHours = {}; // hours that have a 30-minute split for the selected date
@@ -49,9 +48,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
   final ValueNotifier<bool> _showRetroNotifier = ValueNotifier(false);
 
   bool get _habitsExpanded => _habitsExpandedNotifier.value;
-
-  Color _planBg(BuildContext context) => Color.alphaBlend(Colors.indigo.withOpacity(0.04), Theme.of(context).colorScheme.surface);
-  Color _retroBg(BuildContext context) => Color.alphaBlend(Colors.orange.withOpacity(0.04), Theme.of(context).colorScheme.surface);
+  bool get _showRetro => _showRetroNotifier.value;
 
   // Using a ValueNotifier means toggling the "Day fully logged" checkbox
   // only rebuilds that specific part of the UI instead of the whole timeline.
@@ -60,21 +57,20 @@ class _TimelineScreenState extends State<TimelineScreen> {
   // Convenience getter so existing read-access sites keep working.
   bool get _dayComplete => _dayCompleteNotifier.value;
 
-  bool get _showRetro => _showRetroNotifier.value;
-
   final Map<String, GlobalKey> _blockKeys = {};
-
   static final Map<String, double> _offsetCache = {}; // keyed by yyyy-MM-dd (selected date)
   late String _currentDateKey;
 
   List<String> _recentActivities = [];
 
   Set<String> _loggedDates = {};
+  late Stream<QuerySnapshot> _currentStream;
 
   @override
   void initState() {
     super.initState();
     _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+    _initStream();
     _scrollController = ScrollController(initialScrollOffset: _offsetCache[_currentDateKey] ?? 0)
       ..addListener(() {
         _offsetCache[_currentDateKey] = _scrollController.offset;
@@ -90,13 +86,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     _sleepTimeController.dispose();
     _wakeTimeController.dispose();
 
-    for (final c in _noteControllers.values) {
-      c.dispose();
-    }
-    for (final t in _noteDebouncers.values) {
-      t.cancel();
-    }
-    _noteDebouncers.values.forEach((t) => t.cancel());
+
     _pendingScrollOffset=null;
     super.dispose();
   }
@@ -227,61 +217,47 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
   }
 
-  void _scrollToWakeTime() {
-    if (wakeTime == null) return;
-    const itemHeight = 120.0;
-    final offset = wakeTime!.hour * itemHeight;
-    if (_scrollController.hasClients) {
-      _scrollController.jumpTo(offset.clamp(0, _scrollController.position.maxScrollExtent));
-    } else {
-      _pendingScrollOffset = offset;
-    }
-  }
-
   Future<void> _scrollToNow() async {
     final now = DateTime.now();
     final int hour = now.hour;
-    final minute = (_splitHours.contains(hour) && now.minute >= 30) ? 30 : 0;
-    final id = '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+    // If it's effectively 30 min block (>= 30) AND that hour is split, scroll to :30
+    // But if hour not split, :30 doesn't exist, so scroll to :00
+    final bool target30 = _splitHours.contains(hour) && now.minute >= 30;
+    final id = _noteKey(hour, target30 ? 30 : 0);
 
-    void _doScroll() {
-      final targetKey = _blockKeys[id];
-      if (targetKey?.currentContext != null) {
-        Scrollable.ensureVisible(
-          targetKey!.currentContext!,
-          duration: const Duration(milliseconds: 400),
-          alignment: 0.0,
-          curve: Curves.easeOut,
-        );
-        return;
-      }
-    }
-
-    _doScroll();
-    // already scheduled once for next frame below – keeps behaviour the same.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _doScroll());
-
-    // If target not yet in tree we approximate offset, then refine after scroll.
-    final targetKey = _blockKeys[id];
-    if (targetKey?.currentContext != null) return;
-
-    if (_scrollController.hasClients) {
-      // Fallback approximation (includes extra space for section headers)
-      const double itemHeight = 120.0;
-      const double headerHeight = 48.0; // closer to actual ListTile height
-      int headersBefore = 0;
-      if (hour >= 6) headersBefore++;
-      if (hour >= 12) headersBefore++;
-      if (hour >= 18) headersBefore++;
-      final double baseOffset = hour * itemHeight + (minute == 30 ? itemHeight / 2 : 0);
-      final double offset = baseOffset + headersBefore * headerHeight;
-      await _scrollController.animateTo(
-        offset.clamp(0, _scrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOut,
+    final key = _blockKeys[id];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+        alignment: 0.1, // slightly below top
       );
-      // After animation completes, attempt precise scroll again.
-      _doScroll();
+    }
+  }
+
+  void _scrollToWakeTime() {
+    if (wakeTime == null) return;
+    // same logic, assume wake time is usually on the hour, but if we stored minutes implies precision
+    // For simplicity, simplest approximation
+    final id = _noteKey(wakeTime!.hour, 0);
+    final key = _blockKeys[id];
+    if (key?.currentContext != null) {
+       Scrollable.ensureVisible(
+        key!.currentContext!,
+        alignment: 0.1,
+      );
+    } else {
+      // if not mounted yet? Should unlikely be the case with SingleChildScrollView 
+      // unless frame hasn't built.
+       WidgetsBinding.instance.addPostFrameCallback((_) {
+         if (key?.currentContext != null) {
+            Scrollable.ensureVisible(
+              key!.currentContext!,
+              alignment: 0.1,
+            );
+         }
+       });
     }
   }
 
@@ -423,16 +399,12 @@ class _TimelineScreenState extends State<TimelineScreen> {
               // Save current offset is already handled by listener.
               setState(() {
                 // clear controllers when switching date to avoid residue
-                for (final c in _noteControllers.values) {
-                  c.dispose();
-                }
-                _noteControllers.clear();
-                _noteDebouncers.clear();
-
+                // Note: managed by TimelineHourTile now
                 _blockKeys.clear();
-
+                
                 selectedDate = date;
                 _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+                _initStream();
                 _loadDayComplete();
               });
 
@@ -473,15 +445,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
             ),
           ),
           Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds:300),
-              switchInCurve: Curves.easeOut,
-              switchOutCurve: Curves.easeIn,
-              // Remove the outgoing child from the tree immediately to avoid
-              // ScrollController and GlobalKey duplication.
-              layoutBuilder: (currentChild, previousChildren) => currentChild ?? const SizedBox.shrink(),
-              child: _buildTimelineBody(),
-            ),
+            child: _buildTimelineBody(),
           ),
         ],
       ),
@@ -489,19 +453,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 
   Widget _buildTimelineBody() {
-    return KeyedSubtree(
-      // Different key per selected date allows AnimatedSwitcher to animatedly
-      // replace the whole list when the date changes instead of a hard swap.
+    return StreamBuilder<QuerySnapshot>(
       key: ValueKey(_currentDateKey),
-      child: StreamBuilder<QuerySnapshot>(
-        stream: getFirestore()
-            .collection('timeline_entries')
-            .doc(FirebaseAuth.instance.currentUser?.uid ?? '')
-            .collection('entries')
-            .where('date', isEqualTo: DateFormat('yyyy-MM-dd').format(selectedDate))
-            .snapshots(),
-        builder: _buildTimelineStream,
-      ),
+      stream: _currentStream,
+      builder: _buildTimelineStream,
     );
   }
 
@@ -509,7 +464,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     if (snapshot.hasError) {
       return Center(child: Text('Error: ${snapshot.error}'));
     }
-    if (snapshot.connectionState == ConnectionState.waiting) {
+    if (!snapshot.hasData) {
       return const Center(child: CircularProgressIndicator());
     }
     var entries = snapshot.data?.docs
@@ -580,80 +535,120 @@ class _TimelineScreenState extends State<TimelineScreen> {
       }
     });
 
-    return ListView.builder(
+    return SingleChildScrollView(
       controller: _scrollController,
-      itemCount: 24,
-      itemBuilder: (context, hour) {
-        // Retrieve any existing entries for this hour and minute markers
-        String? _sectionTitle(int h){
-          if(h==6) return 'Morning';
-          if(h==12) return 'Afternoon';
-          if(h==18) return 'Evening';
-          return null;
-        }
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _showRetroNotifier,
+        builder: (context, showRetro, _) {
+          return Column(
+            children: List.generate(24, (hour) {
+              // Retrieve any existing entries for this hour and minute markers
+              String? _sectionTitle(int h){
+                if(h==6) return 'Morning';
+                if(h==12) return 'Afternoon';
+                if(h==18) return 'Evening';
+                return null;
+              }
 
-        TimelineEntry _blank(int minute) {
-          final start=DateTime(selectedDate.year,selectedDate.month,selectedDate.day,hour,minute);
-          return TimelineEntry(
-            id: _docId(start),
-            userId: FirebaseAuth.instance.currentUser?.uid ?? '',
-            date: selectedDate,
-            startTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute),
-            endTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute).add(Duration(minutes: minute==0?60:30)),
-            activity: '',
-            notes: '',
+              TimelineEntry _blank(int minute) {
+                final start=DateTime(selectedDate.year,selectedDate.month,selectedDate.day,hour,minute);
+                return TimelineEntry(
+                  id: _docId(start),
+                  userId: FirebaseAuth.instance.currentUser?.uid ?? '',
+                  date: selectedDate,
+                  startTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute),
+                  endTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute).add(Duration(minutes: minute==0?60:30)),
+                  activity: '',
+                  notes: '',
+                );
+              }
+
+              final entry00 = entries.firstWhere(
+                (e) => e.startTime.hour == hour && e.startTime.minute == 0,
+                orElse: () => _blank(0),
+              );
+
+              final entry30 = _splitHours.contains(hour)
+                  ? entries.firstWhere(
+                      (e) => e.startTime.hour == hour && e.startTime.minute == 30,
+                      orElse: () => _blank(30),
+                    )
+                  : null;
+              
+              final key00 = _blockKeys.putIfAbsent(_noteKey(hour, 0), () => GlobalKey());
+              final key30 = _splitHours.contains(hour) 
+                  ? _blockKeys.putIfAbsent(_noteKey(hour, 30), () => GlobalKey())
+                  : null;
+
+              final tile = TimelineHourTile(
+                key: ValueKey(hour),
+                hour: hour,
+                entry00: entry00,
+                entry30: entry30,
+                isSplit: _splitHours.contains(hour),
+                showRetro: showRetro,
+                onToggleSplit: () => _toggleSplit(hour),
+                onUpdateEntry: _updateEntry,
+                availableActivities: _flattenCats(),
+                recentActivities: _recentActivities,
+                onPromptCustomActivity: () => _promptCustomActivity(context),
+                onUpdateRecentActivity: (act) {
+                  if (!_recentActivities.contains(act)) {
+                    setState(() {
+                      _recentActivities.insert(0, act);
+                      if (_recentActivities.length > 5) _recentActivities.removeLast();
+                    });
+                    _saveSettings();
+                  }
+                },
+                key00: key00,
+                key30: key30,
+              );
+
+              final List<Widget> cardChildren=[];
+              final section=_sectionTitle(hour);
+              if(section!=null){
+                cardChildren.add(Padding(
+                  padding: const EdgeInsets.symmetric(horizontal:16,vertical:8),
+                  child: Text(section,style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                ));
+              }
+              cardChildren.add(tile);
+              return Column(children: cardChildren);
+            }),
           );
         }
+      ),
+    );
+  }
 
-        final entry00 = entries.firstWhere(
-          (e) => e.startTime.hour == hour && e.startTime.minute == 0,
-          orElse: () => _blank(0),
-        );
-
-        final entry30 = _splitHours.contains(hour)
-            ? entries.firstWhere(
-                (e) => e.startTime.hour == hour && e.startTime.minute == 30,
-                orElse: () => _blank(30),
-              )
-            : null;
-
-        final bool isSleepRow = entry00.activity == 'Sleep';
-        final container= Container(
-          margin: const EdgeInsets.symmetric(horizontal:8,vertical:3),
-          decoration: BoxDecoration(
-            color: isSleepRow ? Colors.blueGrey.withOpacity(0.04) : Theme.of(context).colorScheme.surfaceVariant,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius:4, offset: Offset(0,2))],
+  Future<String?> _promptCustomActivity(BuildContext context) async {
+    String? custom;
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        final c = TextEditingController();
+        return AlertDialog(
+          title: const Text('New Activity'),
+          content: TextField(
+            controller: c,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Activity Name'),
           ),
-          child: Column(
-            children: [
-              ListTile(
-                title: Text(DateFormat('h a').format(DateTime(selectedDate.year,selectedDate.month,selectedDate.day,hour)), style: Theme.of(context).textTheme.titleSmall),
-                trailing: IconButton(
-                  icon: Icon(_splitHours.contains(hour) ? Icons.remove : Icons.call_split, color: Theme.of(context).colorScheme.primary),
-                  onPressed: () => _toggleSplit(hour),
-                ),
-              ),
-              _buildSubBlock(entry00, hour, 0),
-              if (entry30 != null) _buildSubBlock(entry30, hour, 30),
-            ],
-          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () {
+                custom = c.text.trim();
+                Navigator.pop(ctx);
+              },
+              child: const Text('Add'),
+            ),
+          ],
         );
-
-        final List<Widget> cardChildren=[];
-
-        final section=_sectionTitle(hour);
-        if(section!=null){
-          cardChildren.add(Padding(
-            padding: const EdgeInsets.symmetric(horizontal:16,vertical:8),
-            child: Text(section,style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-          ));
-        }
-
-        cardChildren.add(container);
-        return Column(children: cardChildren);
       },
     );
+    return custom;
   }
 
   Future<void> _updateEntry(TimelineEntry entry, String activity, String notes, {bool isPlan=false}) async {
@@ -958,6 +953,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   String _fmt24(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
+  void _initStream() {
+    _currentStream = getFirestore()
+          .collection('timeline_entries')
+          .doc(FirebaseAuth.instance.currentUser?.uid ?? '')
+          .collection('entries')
+          .where('date', isEqualTo: DateFormat('yyyy-MM-dd').format(selectedDate))
+          .snapshots();
+  }
+
   void _dedupCats() {
     _activities = _activities.toSet().toList();
     _archivedActivities = _archivedActivities.toSet().toList();
@@ -982,9 +986,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       _splitHours.remove(hour);
       _cachedEntries.removeWhere((e) => e.id == halfDocId);
 
-      final k = _noteKey(hour, 30);
-      _noteControllers.remove(k)?.dispose();
-      _noteDebouncers.remove(k)?.cancel();
+
     } else {
       // SPLIT -> add blank 30-minute entry
       final newEntry = TimelineEntry(
@@ -1004,196 +1006,22 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
     // Rebuild only if the widget is still in the tree; this redraws the two
     // affected rows without resetting scroll position.
-    if (mounted) setState(() {});
+    
+    // We rely on the StreamBuilder to rebuild the UI when the data changes.
+    // However, we still want to ensure visibility after that update propagates.
+    // This is tricky because we don't know exactly when the frame will render.
+    // But usually local latency compensation is fast.
+    
+    // Workaround: We wait for the stream to likely have updated? 
+    // No, better to genericize the ensureVisible.
+    
+    // For now, let's just remove setState. The StreamBuilder will handle the rebuild.
+    // We can try to attach the scroll correction to the next frame, risking it runs before the stream update.
+    // But if the stream update is synchronous (cached), it works.
+
   }
 
   String _noteKey(int hour, int minute) => '${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}';
-
-  Widget _buildSubBlock(TimelineEntry entry, int hour, int minute) {
-    final keyStr = _noteKey(hour, minute);
-    final subKey = _blockKeys.putIfAbsent(keyStr, () => GlobalKey());
-    final key = keyStr;
-    final controller = _noteControllers.putIfAbsent(key, () => TextEditingController(text: entry.notes));
-    // keep controller text in sync if backend changed (but avoid disrupting typing)
-    if (controller.text != entry.notes && !_noteDebouncers.containsKey(key)) {
-      controller.text = entry.notes;
-      controller.selection = TextSelection.collapsed(offset: controller.text.length);
-    }
-
-    // Pre-compute flattened Activities once to avoid redundant work and help with value validation
-    final availableActivities = _flattenCats();
-    // Always ensure current entry's activity is available for its own dropdown
-    void _ensureValue(String v){if(v.isNotEmpty && !availableActivities.contains(v)){availableActivities.add(v);} }
-    _ensureValue(entry.activity);
-    _ensureValue(entry.planactivity);
-
-    final String? dropdownValue =
-        (entry.activity.isNotEmpty && availableActivities.contains(entry.activity))
-            ? entry.activity
-            : null;
-
-    final planNoteCtrl = _noteControllers.putIfAbsent('p_'+key, ()=> TextEditingController(text: entry.planNotes));
-    if(planNoteCtrl.text!=entry.planNotes && !_noteDebouncers.containsKey('p_'+key)){
-      planNoteCtrl.text=entry.planNotes;
-      planNoteCtrl.selection=TextSelection.collapsed(offset:planNoteCtrl.text.length);
-    }
-
-    final retroNoteCtrl = controller; // existing
-
-    Widget planColumn = Expanded(
-      child: Container(
-        decoration: BoxDecoration(
-          color: _planBg(context),
-          borderRadius: _showRetro
-              ? const BorderRadius.only(topLeft: Radius.circular(8), bottomLeft: Radius.circular(8))
-              : BorderRadius.circular(8),
-        ),
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children:[
-            OutlinedButton(
-              onPressed: () async {
-                final picked = await showActivityPicker(
-                  context: context,
-                  allActivities: availableActivities,
-                  recent: _recentActivities,
-                );
-                if (picked == null) return;
-                if (picked == '__custom') {
-                  final custom = await _promptCustomactivity();
-                  if (custom != null && custom.isNotEmpty) {
-                    _updateRecent(custom);
-                    _updateEntry(entry, custom, entry.planNotes, isPlan: true);
-                  }
-                } else {
-                  _updateRecent(picked);
-                  _updateEntry(entry, picked, entry.planNotes, isPlan: true);
-                }
-              },
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  entry.planactivity.isEmpty ? 'Plan' : _displayLabel(entry.planactivity),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            TextField(
-              controller: planNoteCtrl,
-              maxLines:null,
-              decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
-              onChanged:(val){
-                _noteDebouncers['p_'+key]?.cancel();
-                _noteDebouncers['p_'+key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.planactivity, val,isPlan:true);_noteDebouncers.remove('p_'+key);});
-              },
-            ),
-          ]),
-        ));
-
-    Widget retroColumn = Container(
-      decoration: BoxDecoration(
-        color: _retroBg(context),
-        borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)),
-      ),
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children:[
-          OutlinedButton(
-            onPressed: () async {
-              final picked = await showActivityPicker(
-                context: context,
-                allActivities: availableActivities,
-                recent: _recentActivities,
-              );
-              if (picked == null) return;
-              if (picked == '__custom') {
-                final custom = await _promptCustomactivity();
-                if (custom != null && custom.isNotEmpty) {
-                  _updateRecent(custom);
-                  _updateEntry(entry, custom, entry.notes);
-                }
-              } else {
-                _updateRecent(picked);
-                _updateEntry(entry, picked, entry.notes);
-              }
-            },
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                dropdownValue == null ? 'Retro' : _displayLabel(dropdownValue),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          TextField(
-            controller: retroNoteCtrl,
-            maxLines:null,
-            decoration: const InputDecoration(hintText:'Notes',border:InputBorder.none),
-            onChanged:(val){
-              _noteDebouncers[key]?.cancel();
-              _noteDebouncers[key]=Timer(const Duration(milliseconds:500),(){_updateEntry(entry, entry.activity, val);_noteDebouncers.remove(key);});
-            },
-          ),
-        ]),
-      );
-
-    final bool canCopy = entry.planactivity.isNotEmpty && entry.planactivity != entry.activity;
-
-    final retroWithCopy = Stack(
-      children: [
-        retroColumn,
-        if (canCopy)
-          Positioned(
-            top: 4,
-            right: 4,
-            child: InkWell(
-              onTap: () => _updateEntry(entry, entry.planactivity, entry.notes),
-              child: Icon(Icons.copy_all, size: 16, color: Theme.of(context).colorScheme.primary),
-            ),
-          ),
-      ],
-    );
-
-    Widget innerRow;
-    if (!_showRetro) {
-      innerRow = Row(children: [planColumn]);
-    } else {
-      innerRow = Row(
-        children: [
-          planColumn,
-          const SizedBox(width: 4),
-          Expanded(child: retroWithCopy),
-        ],
-      );
-    }
-
-    if (minute == 0) return innerRow;
-
-    final String label = DateFormat('h:mm a').format(entry.startTime);
-    final TextStyle labelStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ) ?? const TextStyle(fontSize: 13, fontWeight: FontWeight.w600);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 16.0, top: 8, bottom: 6),
-          child: Text(label, style: labelStyle),
-        ),
-        innerRow,
-      ],
-    );
-  }
 
   String _dateStr(DateTime d)=>DateFormat('yyyy-MM-dd').format(d);
 
