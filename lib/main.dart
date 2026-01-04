@@ -22,7 +22,6 @@ FirebaseFirestore getFirestore() {
   if (_testFirestore != null) return _testFirestore!;
   return FirebaseFirestore.instanceFor(
     app: Firebase.app(),
-    databaseId: 'habitstore',
   );
 }
 
@@ -32,18 +31,21 @@ void main() async {
   try {
     await Firebase.initializeApp(
       options: const FirebaseOptions(
-        apiKey: "AIzaSyAfmZKJgt64-4l94e0S_tE9wsXO0x0TQxA",
-        appId: "1:308942065441:web:a382694cb907a458eeb860",
-        messagingSenderId: "308942065441",
-        projectId: "habitlogger-55050",
-        authDomain: "habitlogger-55050.firebaseapp.com",
-        storageBucket: "habitlogger-55050.appspot.com",
+        apiKey: "AIzaSyB0BbNpPnUt-ixHTwRXhn1fFUMfTsJXnh4",
+        appId: "1:1033076029638:web:0fd9006d04040cf7557fc7",
+        messagingSenderId: "1033076029638",
+        projectId: "habitslogger",
+        authDomain: "habitslogger.firebaseapp.com",
+        storageBucket: "habitslogger.firebasestorage.app",
+        measurementId: "G-JHW4N1XDPX",
       ),
     );
     
     // Configure Firestore settings
+    // Disable persistence on web to avoid "Failed to obtain exclusive access" 
+    // errors when multiple tabs are open.
     getFirestore().settings = const Settings(
-      persistenceEnabled: true,
+      persistenceEnabled: false,
       cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
     );
     

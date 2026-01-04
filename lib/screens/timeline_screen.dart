@@ -593,11 +593,26 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 recentActivities: _recentActivities,
                 onPromptCustomActivity: () => _promptCustomActivity(context),
                 onUpdateRecentActivity: (act) {
+                  bool changed = false;
+                  
+                  // 1. Update Recent (Ordering)
                   if (!_recentActivities.contains(act)) {
-                    setState(() {
-                      _recentActivities.insert(0, act);
-                      if (_recentActivities.length > 5) _recentActivities.removeLast();
-                    });
+                    _recentActivities.insert(0, act);
+                    if (_recentActivities.length > 8) _recentActivities.removeLast();
+                    changed = true;
+                  }
+                  
+                  // 2. Implicit Save to Permanent Dictionary
+                  // If it's not in our known list (and not archived), save it.
+                  if (!_activities.contains(act) && !_archivedActivities.contains(act)) {
+                     _activities.add(act);
+                     // _dedupCats() handles sorting/cleaning
+                     _dedupCats(); 
+                     changed = true;
+                  }
+
+                  if (changed) {
+                    setState(() {});
                     _saveSettings();
                   }
                 },
