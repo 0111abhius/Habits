@@ -31,7 +31,11 @@ Pay special attention to where my 'Actual' activity differed from my 'Planned' a
     }
     }
 
-  Future<String> getTemplateSuggestions({required String currentTemplate, required String goal}) async {
+  Future<String> getTemplateSuggestions({
+    required String currentTemplate,
+    required String goal,
+    required List<String> existingActivities,
+  }) async {
     final prompt = '''
 You are a productivity expert assisting in creating a daily schedule template.
 The user has a specific goal in mind and may have already filled in parts of the template.
@@ -41,18 +45,37 @@ If the template is partially filled, suggest how to fill the gaps or optimize ex
 
 GOAL: $goal
 
+EXISTING ACTIVITIES (reuse these if possible):
+${existingActivities.join(', ')}
+
 CURRENT TEMPLATE DRAFT:
 $currentTemplate
 
-Please provide a structured, easy-to-read response with specific time blocks and rationale where appropriate.
+IMPORTANT: You must return the response in strict JSON format.
+The JSON must have this structure:
+{
+  "schedule": {
+    "08:00": "Activity Name",
+    "09:30": "Activity Name"
+  },
+  "newActivities": ["New Activity 1", "New Activity 2"],
+  "reasoning": "Explanation of the schedule..."
+}
+"schedule" keys must be "HH:mm" strings (24-hour format). 
+"newActivities" should list any activities suggested that are NOT in the EXISTING ACTIVITIES list.
+"reasoning" should be a concise summary of the plan.
+Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
 ''';
 
     try {
       final content = [Content.text(prompt)];
       final response = await _model.generateContent(content);
-      return response.text ?? 'No suggestions available at this time.';
+      var text = response.text ?? '{}';
+      // simple cleanup if model wrapped it in markdown
+      text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+      return text;
     } catch (e) {
-      return 'Failed to get suggestions: $e';
+      return '{"error": "$e"}';
     }
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'dart:convert';
 
 import '../models/timeline_entry.dart';
 import '../main.dart';
@@ -464,31 +465,205 @@ class _TemplateScreenState extends State<TemplateScreen> {
     try {
       final tmplStr = _getTemplateString();
       final aiService = AIService();
-      final suggestions = await aiService.getTemplateSuggestions(
+      final jsonStr = await aiService.getTemplateSuggestions(
         currentTemplate: tmplStr.isEmpty ? '(Empty Template)' : tmplStr,
         goal: goal.isEmpty ? 'General Productivity' : goal,
+        existingActivities: _activities,
       );
 
-      if (mounted) {
-        Navigator.pop(context); // loading
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('AI Suggestions'),
-            content: SingleChildScrollView(
-              child: Text(suggestions),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-            ],
-          ),
-        );
+      if (!mounted) return;
+      Navigator.pop(context); // loading
+
+      try {
+        final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+        if (data.containsKey('error')) {
+          _showError('AI Error: ${data['error']}');
+          return;
+        }
+        _showReviewDialog(data);
+      } catch (e) {
+        // Fallback if not valid JSON (shouldn't happen with updated prompt, but safety first)
+        _showError('Failed to parse AI response. Raw output:\n$jsonStr');
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        _showError('Error: $e');
       }
+    }
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _showReviewDialog(Map<String, dynamic> data) async {
+    final schedule = Map<String, String>.from(data['schedule'] ?? {});
+    final newActs = List<String>.from(data['newActivities'] ?? []);
+    final reasoning = data['reasoning'] ?? '';
+
+    // Track selected new activities
+    final Set<String> selectedNewActs = Set.from(newActs);
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('AI Review'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: DefaultTabController(
+              length: 2,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const TabBar(
+                    labelColor: Colors.blue,
+                    tabs: [Tab(text: 'Schedule'), Tab(text: 'New Activities')],
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        // Schedule Tab
+                        SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (reasoning.isNotEmpty) ...[
+                                Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: Text('Note: $reasoning', style: const TextStyle(fontStyle: FontStyle.italic)),
+                                ),
+                                const Divider(),
+                              ],
+                              ...schedule.entries.map((e) => ListTile(
+                                dense: true,
+                                title: Text(e.key),
+                                subtitle: Text(e.value),
+                              )),
+                            ],
+                          ),
+                        ),
+                        // New Activities Tab
+                        newActs.isEmpty
+                            ? const Center(child: Text('No new activities suggested.'))
+                            : ListView(
+                                shrinkWrap: true,
+                                children: newActs.map((act) => CheckboxListTile(
+                                  title: Text(act),
+                                  value: selectedNewActs.contains(act),
+                                  onChanged: (val) {
+                                    setState(() {
+                                      if (val == true) selectedNewActs.add(act);
+                                      else selectedNewActs.remove(act);
+                                    });
+                                  },
+                                )).toList(),
+                              ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _applyAISuggestions(schedule, selectedNewActs.toList());
+              },
+              child: const Text('Apply & Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _applyAISuggestions(Map<String, String> schedule, List<String> newActivities) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    // 1. Create new activities if any
+    if (newActivities.isNotEmpty) {
+      final settingsRef = getFirestore().collection('user_settings').doc(uid);
+      await getFirestore().runTransaction((tx) async {
+        final doc = await tx.get(settingsRef);
+        if (doc.exists) {
+            final data = doc.data()!;
+            final currentCustom = List<String>.from(data['customActivities'] ?? []);
+            final currentArchived = List<String>.from(data['archivedActivities'] ?? []);
+            
+            // Add new ones, remove from archived if present
+            for (final act in newActivities) {
+                if (!currentCustom.contains(act)) currentCustom.add(act);
+                if (currentArchived.contains(act)) currentArchived.remove(act);
+            }
+            tx.update(settingsRef, {
+                'customActivities': currentCustom,
+                'archivedActivities': currentArchived,
+            });
+        }
+      });
+      // Refresh local list
+      await _loadActivities();
+    }
+
+    // 2. Apply schedule
+    // We iterate over the schedule map "HH:mm" -> "Activity"
+    // We assume 30 or 60 min blocks depending on existing splits? 
+    // Actually, AI returns HH:mm. We should map strictly to our slots.
+    // If AI gives "08:15", we likely can't handle it easily without sub-hour logic, so we assume HH:00 or HH:30.
+    // We will parse HH and mm.
+    
+    // Clear current pushes or batch update? Using _entries update logic.
+    // We'll process each schedule item.
+    
+    for (final entry in schedule.entries) {
+      final parts = entry.key.split(':');
+      final h = int.parse(parts[0]);
+      final m = int.parse(parts[1]);
+      
+      // Ensure split if minute is 30 and slot doesn't exist?
+      // Or just find the closest slot. 
+      // If m >= 30, use 30 slot. If m < 30, use 00 slot.
+      // This is a simplification.
+      
+      final minute = m >= 30 ? 30 : 0;
+      
+      // If we need 30 but don't have split, toggle it
+      if (minute == 30 && !_splitHours.contains(h)) {
+         await _toggleSplit(h); 
+      }
+      
+      final id = _id(h, minute);
+      final currentEntry = _entries[id];
+      if (currentEntry != null) {
+          final updated = TimelineEntry(
+            id: currentEntry.id,
+            userId: currentEntry.userId,
+            date: currentEntry.date,
+            startTime: currentEntry.startTime,
+            endTime: currentEntry.endTime,
+            planactivity: entry.value, // Set as Planned Activity
+            planNotes: currentEntry.planNotes,
+            activity: entry.value, // Also set as default Activity? Maybe leave blank? Let's strict to Plan.
+            notes: currentEntry.notes,
+          );
+          _entries[id] = updated;
+          await _saveEntry(updated);
+      }
+    }
+    
+    if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI Suggestions applied!')));
     }
   }
 
