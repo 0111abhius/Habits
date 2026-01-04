@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../models/timeline_entry.dart';
 import '../main.dart';
 import '../utils/activities.dart';
+import '../utils/ai_service.dart';
 
 class TemplateScreen extends StatefulWidget {
   final String? templateId;
@@ -244,6 +245,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.templateName ?? 'Template'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.auto_awesome),
+            tooltip: 'AI Coach',
+            onPressed: _showAIAssistDialog,
+          ),
+        ],
       ),
       body: ListView.builder(
         itemCount: 24,
@@ -411,6 +419,93 @@ class _TemplateScreenState extends State<TemplateScreen> {
     }
   }
 
+  Future<void> _showAIAssistDialog() async {
+    final TextEditingController goalCtrl = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('AI Template Coach'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('What is your main goal for this day?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: goalCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Goal (e.g., "Deep work", "Recovery")',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _generateTemplateInsights(goalCtrl.text.trim());
+            },
+            child: const Text('Get Suggestions'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _generateTemplateInsights(String goal) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final tmplStr = _getTemplateString();
+      final aiService = AIService();
+      final suggestions = await aiService.getTemplateSuggestions(
+        currentTemplate: tmplStr.isEmpty ? '(Empty Template)' : tmplStr,
+        goal: goal.isEmpty ? 'General Productivity' : goal,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // loading
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('AI Suggestions'),
+            content: SingleChildScrollView(
+              child: Text(suggestions),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
+
+  String _getTemplateString() {
+    final sortedKeys = _entries.keys.toList()..sort();
+    final buffer = StringBuffer();
+    for (final key in sortedKeys) {
+      final entry = _entries[key]!;
+      final act = entry.planactivity.isEmpty ? entry.activity : entry.planactivity;
+      if (act.isNotEmpty) {
+        final hour = key.substring(0, 2);
+        final minute = key.substring(2);
+        buffer.writeln('$hour:$minute - $act');
+      }
+    }
+    return buffer.toString();
+  }
   Future<void> _loadActivities() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;

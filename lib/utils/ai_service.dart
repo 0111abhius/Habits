@@ -29,5 +29,30 @@ Pay special attention to where my 'Actual' activity differed from my 'Planned' a
     } catch (e) {
       return 'Failed to get insights: $e';
     }
+    }
+
+  Future<String> getTemplateSuggestions({required String currentTemplate, required String goal}) async {
+    final prompt = '''
+You are a productivity expert assisting in creating a daily schedule template.
+The user has a specific goal in mind and may have already filled in parts of the template.
+Please analyze the current template (if any) and the goal, then provide specific, actionable suggestions.
+If the template is empty, suggest a full schedule.
+If the template is partially filled, suggest how to fill the gaps or optimize existing blocks to better achieve the goal.
+
+GOAL: $goal
+
+CURRENT TEMPLATE DRAFT:
+$currentTemplate
+
+Please provide a structured, easy-to-read response with specific time blocks and rationale where appropriate.
+''';
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await _model.generateContent(content);
+      return response.text ?? 'No suggestions available at this time.';
+    } catch (e) {
+      return 'Failed to get suggestions: $e';
+    }
   }
 }
