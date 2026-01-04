@@ -120,6 +120,32 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
 
   String _displayLabel(String act) => displayActivity(act);
 
+  Widget _buildCopyButton(TimelineEntry entry) {
+    return InkWell(
+      onTap: () => widget.onUpdateEntry(entry, entry.planactivity, entry.planNotes, isPlan: false),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Plan', style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_forward, size: 14, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 4),
+            Text('Copy', style: Theme.of(context).textTheme.bodySmall), 
+            // "a -> and copy".  Maybe "Plan -> Copy"? 
+            // Let's stick to user request: "Plan and retro with a -> and copy"
+            // "exactly between Plan and retro with a -> and copy"
+            // Maybe: "Plan -> Copy"? Or just "-> Copy"? 
+            // User: "between Plan and retro with a -> and copy"
+            // I'll do: "Plan -> Copy" logic. 
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Section Title
@@ -139,16 +165,34 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
       ),
       child: Column(
             children: [
-              ListTile(
-                title: Text(DateFormat('h a').format(DateTime(2022,1,1,widget.hour)), style: Theme.of(context).textTheme.titleSmall),
-                trailing: IconButton(
-                  icon: Icon(widget.isSplit ? Icons.remove : Icons.call_split, color: Theme.of(context).colorScheme.primary),
-                  onPressed: widget.onToggleSplit,
+              // Custom Header Row
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+                child: Row(
+                  children: [
+                     Expanded(
+                       child: Text(
+                         DateFormat('h a').format(DateTime(2022,1,1,widget.hour)), 
+                         style: Theme.of(context).textTheme.titleSmall
+                       ),
+                     ),
+                     if (widget.showRetro) ...[
+                        // Centered Copy Button
+                        _buildCopyButton(widget.entry00),
+                        const Expanded(child: SizedBox()), 
+                     ] else 
+                        const Expanded(child: SizedBox()),
+
+                     IconButton(
+                        icon: Icon(widget.isSplit ? Icons.remove : Icons.call_split, color: Theme.of(context).colorScheme.primary),
+                        onPressed: widget.onToggleSplit,
+                     ),
+                  ],
                 ),
               ),
               Container(key: widget.key00, child: _buildSubBlock(widget.entry00, 0)),
               if (widget.entry30 != null) 
-                Container(key: widget.key30, child: _buildSubBlock(widget.entry30!, 30)),
+                 Container(key: widget.key30, child: _buildSubBlock(widget.entry30!, 30)),
             ],
       ),
     );
@@ -291,21 +335,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     );
 
     // Combine
-    final retroWithCopy = Stack(
-      children: [
-        retroColumn,
-        if (entry.planNotes.isNotEmpty || entry.planactivity.isNotEmpty)
-          Positioned(
-            top: 4,
-            right: 4,
-            child: InkWell(
-              onTap: () => widget.onUpdateEntry(entry, entry.planactivity, entry.planNotes, isPlan: false),
-              child: Icon(Icons.copy_all, size: 16, color: Theme.of(context).colorScheme.primary),
-            ),
-          ),
-      ],
-    );
-
+    // Remove stack, just use row
     Widget innerRow;
     if (!widget.showRetro) {
       innerRow = Row(children: [planColumn]);
@@ -314,7 +344,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
         children: [
           planColumn,
           const SizedBox(width: 4),
-          Expanded(child: retroWithCopy),
+          Expanded(child: retroColumn),
         ],
       );
     }
@@ -332,8 +362,20 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 16.0, top: 8, bottom: 6),
-          child: Text(label, style: labelStyle),
+          padding: const EdgeInsets.only(left: 16.0, top: 8, bottom: 6, right: 8),
+          child: Row(
+            children: [
+              Text(label, style: labelStyle),
+              if (widget.showRetro) ...[
+                 const Expanded(child: SizedBox()),
+                 _buildCopyButton(entry),
+                 const Expanded(child: SizedBox()),
+                 // Balance visual weight of trailing icon in main header (48px) to try align center
+                 const SizedBox(width: 48), 
+              ] else 
+                 const Spacer(),
+            ],
+          ),
         ),
         innerRow,
       ],
