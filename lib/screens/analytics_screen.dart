@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../models/timeline_entry.dart';
 import '../main.dart';
 import '../models/habit.dart';
+import '../utils/ai_service.dart';
 
 enum AnalyticsRange {
   daily,
@@ -213,6 +214,53 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return _AnalyticsData(activityAvg: avgPerDay, habits: habitStats, days: days);
   }
 
+  Future<String> _fetchDetailedLogs(DateTime start, DateTime end) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return '';
+
+    final dateFormat = DateFormat('yyyy-MM-dd');
+    final timeFormat = DateFormat('HH:mm');
+    final startStr = dateFormat.format(start);
+    final endStr = dateFormat.format(end);
+
+    final snapshot = await getFirestore()
+        .collection('timeline_entries')
+        .doc(user.uid)
+        .collection('entries')
+        .where('date', isGreaterThanOrEqualTo: startStr)
+        .where('date', isLessThanOrEqualTo: endStr)
+        .get();
+
+    final docs = snapshot.docs;
+    // Sort in memory to avoid Firestore Composite Index creation
+    docs.sort((a, b) {
+      final tA = (a.data()['startTime'] as Timestamp).toDate();
+      final tB = (b.data()['startTime'] as Timestamp).toDate();
+      return tA.compareTo(tB);
+    });
+
+    final StringBuffer buffer = StringBuffer();
+    String currentDate = '';
+
+    for (final doc in docs) {
+      final entry = TimelineEntry.fromFirestore(doc);
+      final dateStr = dateFormat.format(entry.date);
+      
+      if (dateStr != currentDate) {
+        buffer.writeln('\nDate: $dateStr');
+        currentDate = dateStr;
+      }
+
+      final timeRange = '${timeFormat.format(entry.startTime)} - ${timeFormat.format(entry.endTime)}';
+      final activity = entry.activity.isEmpty ? 'Uncategorised' : entry.activity;
+      final notes = entry.notes.isNotEmpty ? ' (${entry.notes})' : '';
+      
+      buffer.writeln('  $timeRange: $activity$notes');
+    }
+
+    return buffer.toString();
+  }
+
   void _refreshStats() {
     setState(() {
       _futureData = _fetchData();
@@ -270,11 +318,122 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }
   }
 
+  Future<void> _showAIInsightsDialog() async {
+    final TextEditingController goalCtrl = TextEditingController();
+    
+    // Calculate current range dates
+    DateTime start, end;
+    switch (_selectedRange) {
+      case AnalyticsRange.daily:
+        start = end = DateTime(_anchorDate.year, _anchorDate.month, _anchorDate.day);
+        break;
+      case AnalyticsRange.weekly:
+        final now = DateTime.now();
+        end = DateTime(now.year, now.month, now.day);
+        start = end.subtract(const Duration(days: 6));
+        break;
+      case AnalyticsRange.monthly:
+        final nowM = DateTime.now();
+        end = DateTime(nowM.year, nowM.month, nowM.day);
+        start = _startOfMonth(end);
+        break;
+      case AnalyticsRange.custom:
+        if (_customRange == null) return;
+        start = _customRange!.start;
+        end = _customRange!.end;
+        break;
+    }
+
+    // Checking if we are going too far back or asking too much data might be good, but let's trust the user/API limits for now.
+    
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Get AI Insights'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter a specific goal or focus for the AI to analyze your schedule against.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: goalCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Goal (e.g., "Be more productive")',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              _generateInsights(start, end, goalCtrl.text.trim());
+            },
+            child: const Text('Analyze'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _generateInsights(DateTime start, DateTime end, String goal) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final logs = await _fetchDetailedLogs(start, end);
+      if (logs.isEmpty) {
+        if (mounted) {
+          Navigator.pop(context); // loading
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No logs found for this period to analyze.')));
+        }
+        return;
+      }
+
+      final aiService = AIService();
+      final insights = await aiService.getInsights(logs: logs, goal: goal.isEmpty ? 'General Productivity' : goal);
+
+      if (mounted) {
+        Navigator.pop(context); // loading
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('AI Insights'),
+            content: SingleChildScrollView(
+              child: Text(insights),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Analytics'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.auto_awesome),
+            tooltip: 'Get AI Insights',
+            onPressed: _showAIInsightsDialog,
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
