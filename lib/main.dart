@@ -7,6 +7,7 @@ import 'screens/timeline_screen.dart';
 import 'screens/habits_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/template_screen.dart';
+import 'screens/templates_list_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'widgets/auth_gate.dart';
@@ -78,7 +79,8 @@ class MyApp extends StatelessWidget {
         '/timeline': (context) => const TimelineScreen(),
         '/habits': (context) => const HabitsScreen(),
         '/analytics': (context) => const AnalyticsScreen(),
-        '/template': (context) => const TemplateScreen(),
+        '/template': (context) => const TemplatesListScreen(),
+        '/template-edit': (context) => const TemplateScreen(),
       },
     );
   }

@@ -8,7 +8,9 @@ import '../main.dart';
 import '../utils/activities.dart';
 
 class TemplateScreen extends StatefulWidget {
-  const TemplateScreen({Key? key}) : super(key: key);
+  final String? templateId;
+  final String? templateName;
+  const TemplateScreen({Key? key, this.templateId, this.templateName}) : super(key: key);
 
   @override
   State<TemplateScreen> createState() => _TemplateScreenState();
@@ -46,14 +48,27 @@ class _TemplateScreenState extends State<TemplateScreen> {
   Future<void> _loadTemplate() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final snapshot = await getFirestore()
-        .collection('template_entries')
-        .doc(uid)
-        .collection('entries')
-        .get();
+    
+    CollectionReference coll;
+    if (widget.templateId != null) {
+      coll = getFirestore()
+          .collection('user_templates')
+          .doc(uid)
+          .collection('templates')
+          .doc(widget.templateId)
+          .collection('entries');
+    } else {
+      // Fallback for legacy calls (should be avoided)
+      coll = getFirestore()
+          .collection('template_entries')
+          .doc(uid)
+          .collection('entries');
+    }
+
+    final snapshot = await coll.get();
     final map = <String, TimelineEntry>{};
     for (final doc in snapshot.docs) {
-      final data = doc.data();
+      final data = doc.data() as Map<String, dynamic>;
       final hour = int.parse(doc.id.substring(0, 2));
       final minute = int.parse(doc.id.substring(2));
       final start = DateTime(2000, 1, 1, hour, minute);
@@ -80,10 +95,23 @@ class _TemplateScreenState extends State<TemplateScreen> {
   Future<void> _saveEntry(TimelineEntry entry) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    await getFirestore()
-        .collection('template_entries')
-        .doc(uid)
-        .collection('entries')
+
+    CollectionReference coll;
+    if (widget.templateId != null) {
+      coll = getFirestore()
+          .collection('user_templates')
+          .doc(uid)
+          .collection('templates')
+          .doc(widget.templateId)
+          .collection('entries');
+    } else {
+      coll = getFirestore()
+          .collection('template_entries')
+          .doc(uid)
+          .collection('entries');
+    }
+
+    await coll
         .doc(entry.id)
         .set({
       'planactivity': entry.planactivity,
@@ -96,7 +124,18 @@ class _TemplateScreenState extends State<TemplateScreen> {
   Future<void> _toggleSplit(int hour) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final coll = getFirestore().collection('template_entries').doc(uid).collection('entries');
+    
+    CollectionReference coll;
+    if (widget.templateId != null) {
+      coll = getFirestore()
+          .collection('user_templates')
+          .doc(uid)
+          .collection('templates')
+          .doc(widget.templateId)
+          .collection('entries');
+    } else {
+      coll = getFirestore().collection('template_entries').doc(uid).collection('entries');
+    }
 
     if (_splitHours.contains(hour)) {
       // merge -> delete 30 entry
@@ -204,7 +243,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Template'),
+        title: Text(widget.templateName ?? 'Template'),
       ),
       body: ListView.builder(
         itemCount: 24,
@@ -261,7 +300,17 @@ class _TemplateScreenState extends State<TemplateScreen> {
     }
 
     final batch = getFirestore().batch();
-    final coll = getFirestore().collection('template_entries').doc(uid).collection('entries');
+    CollectionReference coll;
+    if (widget.templateId != null) {
+      coll = getFirestore()
+          .collection('user_templates')
+          .doc(uid)
+          .collection('templates')
+          .doc(widget.templateId)
+          .collection('entries');
+    } else {
+      coll = getFirestore().collection('template_entries').doc(uid).collection('entries');
+    }
     for (var hour = 0; hour < 24; hour++) {
       if (_isSleepHour(hour)) {
         final id = _id(hour, 0);
@@ -295,7 +344,25 @@ class _TemplateScreenState extends State<TemplateScreen> {
     setState(()=>_pushing=true);
     try{
       // fetch template docs once
-      final tmplSnap = await getFirestore().collection('template_entries').doc(uid).collection('entries').get();
+      QuerySnapshot tmplSnap;
+      List<int>? validDays;
+      if (widget.templateId != null) {
+        tmplSnap = await getFirestore()
+            .collection('user_templates')
+            .doc(uid)
+            .collection('templates')
+            .doc(widget.templateId)
+            .collection('entries')
+            .get();
+        // also get template days
+        final tmplDoc = await getFirestore().collection('user_templates').doc(uid).collection('templates').doc(widget.templateId).get();
+        if(tmplDoc.exists){
+           validDays = List<int>.from(tmplDoc.data()!['daysOfWeek']??[]);
+        }
+      } else {
+        tmplSnap = await getFirestore().collection('template_entries').doc(uid).collection('entries').get();
+      }
+
       if(tmplSnap.docs.isEmpty){
         if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Template is empty')));
         return;
@@ -305,6 +372,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
       const int daysAhead=30;
       for(int d=1; d<=daysAhead; d++){
         final date = now.add(Duration(days:d));
+        if (validDays != null && !validDays.contains(date.weekday)) continue; // Skip if not applicable
+
         final dateStr = '${date.year.toString().padLeft(4,'0')}-${date.month.toString().padLeft(2,'0')}-${date.day.toString().padLeft(2,'0')}';
         final entriesColl = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
 
@@ -314,7 +383,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
           final minute=int.parse(doc.id.substring(2));
           final start = DateTime(date.year,date.month,date.day,hour,minute);
           final id = DateFormat('yyyyMMdd_HHmm').format(start);
-          final data=doc.data();
+          final data = doc.data() as Map<String, dynamic>;
           final tmplPlanCat = data['planactivity'] ?? data['activity'] ?? '';
           final tmplPlanNotes = data['planNotes'] ?? data['notes'] ?? '';
           final tmplRetroCat  = (data['activity'] ?? '') == 'Sleep' ? 'Sleep' : '';

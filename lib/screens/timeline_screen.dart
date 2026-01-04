@@ -1124,20 +1124,45 @@ class _TimelineScreenState extends State<TimelineScreen> {
   Future<void> _applyTemplateIfNeeded(List<TimelineEntry> currentEntries) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final dateStr = _dateStr(selectedDate);
     // Only today or future
     final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     if (selectedDate.isBefore(today)) return;
     if (_dayComplete) return; // don't overwrite completed day
 
-    // fetch template docs
-    final snap = await getFirestore()
-        .collection('template_entries')
+    QuerySnapshot tmplSnap;
+
+    // Fetch user templates matches
+    final tmplQuery = await getFirestore()
+        .collection('user_templates')
         .doc(uid)
-        .collection('entries')
+        .collection('templates')
+        .where('daysOfWeek', arrayContains: selectedDate.weekday)
         .get();
-    if (snap.docs.isEmpty) {
-      return; // no template yet
+
+    if (tmplQuery.docs.isNotEmpty) {
+      // Use the first matching template
+      final tmplId = tmplQuery.docs.first.id;
+      tmplSnap = await getFirestore()
+          .collection('user_templates')
+          .doc(uid)
+          .collection('templates')
+          .doc(tmplId)
+          .collection('entries')
+          .get();
+    } else {
+      // Try to fallback to "Default" or legacy if no specific day match?
+      // Actually, if we migrated everything to "Default" (days 1-7), the above query should catch it if they didn't change it.
+      // But if they created a specific one and removed days from default, we might have gaps.
+      // If no template matches this day, we do nothing.
+      
+      // However, check for LEGACY (pre-migration) just in case user didn't open templates screen yet
+      final legacyColl = getFirestore().collection('template_entries').doc(uid).collection('entries');
+      tmplSnap = await legacyColl.get();
+      if (tmplSnap.docs.isEmpty) return; // No legacy either
+    }
+
+    if (tmplSnap.docs.isEmpty) {
+      return; // no template entries found in the matching template
     }
 
     final Map<String, TimelineEntry> existingMap = {
@@ -1147,14 +1172,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final batch = getFirestore().batch();
     final entriesColl = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
 
-    for (final doc in snap.docs) {
+    for (final doc in tmplSnap.docs) {
       final hour = int.parse(doc.id.substring(0, 2));
       final minute = int.parse(doc.id.substring(2));
       final key = _noteKey(hour, minute);
-      final tmplPlanCat = doc['planactivity'] ?? doc['activity'] ?? '';
-      final tmplPlanNotes = doc['planNotes'] ?? doc['notes'] ?? '';
-      final tmplRetroCat = (doc['activity'] ?? '') == 'Sleep' ? 'Sleep' : '';
-      final tmplRetroNotes = tmplRetroCat.isNotEmpty ? (doc['notes'] ?? '') : '';
+      final data = doc.data() as Map<String, dynamic>; // Safely cast
+      final tmplPlanCat = data['planactivity'] ?? data['activity'] ?? '';
+      final tmplPlanNotes = data['planNotes'] ?? data['notes'] ?? '';
+      final tmplRetroCat = (data['activity'] ?? '') == 'Sleep' ? 'Sleep' : '';
+      final tmplRetroNotes = tmplRetroCat.isNotEmpty ? (data['notes'] ?? '') : '';
 
       if (existingMap.containsKey(key)) {
         final existing = existingMap[key]!;
