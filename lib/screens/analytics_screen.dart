@@ -3,7 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-
+import '../widgets/ai_chat_dialog.dart';
+import '../utils/ai_service.dart';
 import '../models/timeline_entry.dart';
 import '../main.dart';
 import '../models/habit.dart';
@@ -407,23 +408,31 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       }
 
       final aiService = AIService();
-      final insights = await aiService.getInsights(logs: logs, goal: goal.isEmpty ? 'General Productivity' : goal);
+      // Prepare the initial prompt but don't send it yet; the dialog will handle "initChat".
+      // Actually, AIChatDialog expects an initial prompt to fire off immediately as the "System/Context" message.
+      
+      final prompt = '''
+You are a productivity expert. I will provide you with a log of my activities for a specific period and a goal I want to achieve.
+Please analyze my schedule and provide specific, actionable suggestions.
+
+GOAL: $goal
+
+ACTIVITY LOGS:
+$logs
+
+Please keep the response concise, encouraging, and focused on the goal. 
+Analyze the time gaps and activity choices.
+Pay special attention to where my 'Actual' activity differed from my 'Planned' activity.
+''';
 
       if (mounted) {
         Navigator.pop(context); // loading
-        showDialog(
+        await showDialog(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('AI Insights'),
-            content: SizedBox(
-               width: double.maxFinite,
-               child: SingleChildScrollView(
-                 child: MarkdownBody(data: insights),
-               ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-            ],
+          builder: (ctx) => AIChatDialog(
+            title: 'AI Insights Chat',
+            initialPrompt: prompt,
+            chatSession: aiService.createChatSession(),
           ),
         );
       }

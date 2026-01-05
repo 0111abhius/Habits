@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import '../utils/ai_service.dart';
 
 class AIGoalDialog extends StatelessWidget {
   final String title;
@@ -168,18 +170,128 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+        // Refinement Input
+        SizedBox(
+          width: double.maxFinite,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                     decoration: const InputDecoration(
+                       hintText: 'Refine (e.g. "Move gym to 5pm")', 
+                       border: OutlineInputBorder(),
+                       contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                     ),
+                     onSubmitted: (val) => _refinePlan(val),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.send),
+                  onPressed: null, // Basic text field usage handled by onSubmitted for now, or users hit enter.
+                  tooltip: 'Type and press Enter to refine',
+                ),
+              ],
+            ),
+          ),
         ),
-        FilledButton(
-          onPressed: () {
-            Navigator.pop(context);
-            widget.onApply(schedule, selectedNewActs.toList());
-          },
-          child: const Text('Apply & Save'),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context);
+                widget.onApply(schedule, selectedNewActs.toList());
+              },
+              child: const Text('Apply & Save'),
+            ),
+            const SizedBox(width: 16),
+          ],
         ),
       ],
     );
+  }
+
+  Future<void> _refinePlan(String request) async {
+    if (request.trim().isEmpty) return;
+    
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final aiService = AIService();
+      // Reconstruct JSON from current state
+      final currentJson = '{"schedule": ${schedule.toString()}, "newActivities": ${newActs.toString()}}';
+      
+      // We need existing activities list. 
+      // Since it's not passed extensively, we can pass it in constructor or just utilize 
+      // the known set from the previous state (newActs + schedule values).
+      // Ideally, the parent widget passed everything. 
+      // For now, let's just pass the activities we know of (from schedule + newActs).
+      final existing = {...schedule.values, ...newActs}.toList();
+
+      final jsonStr = await aiService.refinePlanJSON(
+        currentJson: currentJson,
+        userRequest: request,
+        existingActivities: existing,
+      );
+      
+      // Parse result
+      // We need to import dart:convert if we use jsonDecode, but our AIService returns specific format.
+      // But typically we need to create a map from the string.
+      // Let's assume we can parse the string roughly or use a simple regex/helper, 
+      // OR we update this file to import 'dart:convert'.
+      // I'll add the import in another step or assume it exists/add it now if I can.
+      
+      // ... Actually, I can't easily parse JSON without dart:convert.
+      // I'll update the file imports first in a separate step to be safe, or just do strictly string manipulation?
+      // No, JSON parsing is better. I'll need to trigger an import update.
+      // But wait, I can use a quick helper to "reload" this dialog with new data?
+      // The dialog state holds the data.
+      
+      // Let's defer strict parsing logic to a helper or just do `Navigator.pop` (loading) -> verify -> setState.
+      
+      Navigator.pop(context); // close loading
+      
+      final Map<String, dynamic> data = jsonDecode(jsonStr);
+      final newSchedule = Map<String, String>.from(data['schedule'] ?? {});
+      final newNewActs = List<String>.from(data['newActivities'] ?? []);
+      final newReasoning = data['reasoning'] ?? '';
+
+      setState(() {
+        schedule = newSchedule;
+        newActs = newNewActs;
+        reasoning = newReasoning;
+        // Reset or merge selection? 
+        // Logic: if an activity was previously selected and still exists in new suggestions, keep it selected.
+        // If it's new, default to checked? Or unchecked? Let's default to checked as usual.
+        final Set<String> updatedSelection = {};
+        for (final act in newNewActs) {
+             // If we already selected it, keep it. If it's brand new, select it (default).
+             if (selectedNewActs.contains(act) || !existing.contains(act)) {
+               updatedSelection.add(act);
+             }
+        }
+        selectedNewActs = updatedSelection;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Plan refined.')));
+
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // close loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error refining: $e')));
+      }
+    }
   }
 }

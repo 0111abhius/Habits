@@ -152,4 +152,55 @@ Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
       return '{"error": "$e"}';
     }
   }
+  // --- Interactive Chat & Refinement ---
+
+  /// Creates a stateful chat session for continuous interaction (e.g. Analytics)
+  ChatSession createChatSession() {
+    return _model.startChat();
+  }
+
+  /// Sends a refinement request to the AI to modify an existing JSON schedule.
+  /// [currentJson] is the full JSON string of the current plan.
+  /// [userRequest] is the free-form text (e.g. "Make morning more relaxing").
+  /// Returns updated JSON string.
+  Future<String> refinePlanJSON({
+    required String currentJson,
+    required String userRequest,
+    required List<String> existingActivities,
+  }) async {
+    final prompt = '''
+You are a scheduling assistant. 
+I will provide a JSON schedule and a user request to modify it.
+Update the schedule based on the request.
+Maintain the exact same JSON structure.
+Do not lose existing valid activities unless asked to remove them.
+
+CURRENT JSON:
+$currentJson
+
+USER REQUEST: 
+"$userRequest"
+
+EXISTING ACTIVITIES (reuse if relevant):
+${existingActivities.map((e) => '"$e"').join(', ')}
+
+IMPORTANT: Return ONLY valid JSON. No markdown.
+Structure:
+{
+  "schedule": { "HH:mm": "Activity" },
+  "newActivities": [...],
+  "reasoning": "Brief explanation of changes"
+}
+''';
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await _model.generateContent(content);
+      var text = response.text ?? '{}';
+      text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+      return text;
+    } catch (e) {
+      return '{"error": "$e"}';
+    }
+  }
 }
