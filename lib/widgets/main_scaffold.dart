@@ -4,6 +4,7 @@ import '../screens/timeline_screen.dart';
 import '../screens/habits_screen.dart';
 import '../screens/analytics_screen.dart';
 import '../screens/activities_management_screen.dart';
+import '../screens/tasks_screen.dart';
 
 class MainScaffold extends StatefulWidget {
   const MainScaffold({super.key});
@@ -17,6 +18,7 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   final List<Widget> _screens = [
     const TimelineScreen(),
+    const TasksScreen(),
     const HabitsScreen(),
     const AnalyticsScreen(),
     const ActivitiesManagementScreen(),
@@ -66,6 +68,10 @@ class _MainScaffoldState extends State<MainScaffold> {
               NavigationDestination(
                 icon: Icon(Icons.timeline),
                 label: 'Timeline',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.task_alt),
+                label: 'Tasks',
               ),
               NavigationDestination(
                 icon: Icon(Icons.check_circle_outline),

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import '../models/timeline_entry.dart';
+import '../models/task.dart';
 import '../utils/ai_service.dart';
 import '../widgets/ai_planning_dialogs.dart';
 import '../main.dart'; // for getFirestore()
@@ -40,6 +41,26 @@ class DayPlanningAssistant {
            buffer.writeln('$time - $act');
         }
       }
+      
+      // Fetch Tasks for Today
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        final taskSnap = await getFirestore()
+            .collection('tasks')
+            .where('userId', isEqualTo: uid)
+            .where('isToday', isEqualTo: true)
+            .where('isCompleted', isEqualTo: false)
+            .get();
+        
+        if (taskSnap.docs.isNotEmpty) {
+          buffer.writeln('\nTASKS TO SCHEDULE TODAY:');
+          for (final doc in taskSnap.docs) {
+             final t = Task.fromFirestore(doc);
+             buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)');
+          }
+        }
+      }
+
       final currentPlan = buffer.toString().isEmpty ? '(No activities planned yet)' : buffer.toString();
 
       final ai = AIService();

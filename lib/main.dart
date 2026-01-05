@@ -5,6 +5,7 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/timeline_screen.dart';
 import 'screens/habits_screen.dart';
+import 'screens/tasks_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/template_screen.dart';
 import 'screens/templates_list_screen.dart';
@@ -81,6 +82,7 @@ class MyApp extends StatelessWidget {
       routes: {
         '/home': (context) => const MainScaffold(),
         '/timeline': (context) => const TimelineScreen(),
+        '/tasks': (context) => const TasksScreen(),
         '/habits': (context) => const HabitsScreen(),
         '/analytics': (context) => const AnalyticsScreen(),
         '/template': (context) => const TemplatesListScreen(),
