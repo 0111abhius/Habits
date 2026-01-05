@@ -3,7 +3,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AIService {
   // Now using secured API key from .env
-  static String get _apiKey => dotenv.env['GEMINI_API_KEY'] ?? ''; 
+  static String get _apiKey {
+    final key = dotenv.env['GEMINI_API_KEY'];
+    if (key == null || key.isEmpty) {
+      throw Exception('API Key not found. Please ensure assets/env file is present and GEMINI_API_KEY is set.');
+    }
+    return key;
+  }
 
   final GenerativeModel _model;
 
