@@ -1004,25 +1004,45 @@ class _TimelineScreenState extends State<TimelineScreen> {
   Future<void> _toggleSplit(int hour) async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
     if (userId == null) return;
-    // No need to capture offset; we will not rebuild the whole list.
+    
     final entriesColl = getFirestore()
         .collection('timeline_entries')
         .doc(userId)
         .collection('entries');
 
+    final fullStart = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, 0);
+    final fullDocId = _docId(fullStart);
     final halfStart = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, 30);
     final halfDocId = _docId(halfStart);
 
+    final batch = getFirestore().batch();
+
     if (_splitHours.contains(hour)) {
-      // MERGE -> remove 30-minute entry
-      await entriesColl.doc(halfDocId).delete();
+      // MERGE -> remove 30-minute entry AND extend 00-entry to full hour
+      batch.delete(entriesColl.doc(halfDocId));
+      batch.update(entriesColl.doc(fullDocId), {
+        'endTime': Timestamp.fromDate(fullStart.add(const Duration(hours: 1)))
+      });
 
       _splitHours.remove(hour);
       _cachedEntries.removeWhere((e) => e.id == halfDocId);
-
+      
+      // Update local cache for 00 entry
+      final idx = _cachedEntries.indexWhere((e) => e.id == fullDocId);
+      if (idx != -1) {
+        final old = _cachedEntries[idx];
+        _cachedEntries[idx] = TimelineEntry(
+          id: old.id, userId: old.userId, date: old.date, startTime: old.startTime,
+          endTime: old.startTime.add(const Duration(hours: 1)),
+          activity: old.activity, notes: old.notes,
+          planactivity: old.planactivity, planNotes: old.planNotes
+        );
+      }
 
     } else {
-      // SPLIT -> add blank 30-minute entry
+      // SPLIT -> add 30-minute entry AND shrink 00-entry to 30 mins
+      
+      // 1. Create 30-min entry
       final newEntry = TimelineEntry(
         id: halfDocId,
         userId: userId,
@@ -1032,26 +1052,47 @@ class _TimelineScreenState extends State<TimelineScreen> {
         activity: '',
         notes: '',
       );
-      await entriesColl.doc(halfDocId).set(newEntry.toMap());
+      batch.set(entriesColl.doc(halfDocId), newEntry.toMap());
+
+      // 2. Shrink 00-min entry
+      // We must ensure 00-entry exists. If it doesn't (visual blank), we should create it.
+      // But _blank() is visual only. 
+      // The user clicked "split", implies they want to edit.
+      // If 00 doesn't exist in DB, we should create it now.
+      
+      final idx = _cachedEntries.indexWhere((e) => e.id == fullDocId);
+      if (idx == -1) {
+        // Create 00 entry as well
+        final entry00 = TimelineEntry(
+          id: fullDocId,
+          userId: userId,
+          date: selectedDate,
+          startTime: fullStart,
+          endTime: fullStart.add(const Duration(minutes: 30)), // shrink immediately
+          activity: '',
+          notes: '',
+        );
+        batch.set(entriesColl.doc(fullDocId), entry00.toMap());
+        _cachedEntries.add(entry00);
+      } else {
+        // Update existing
+        batch.update(entriesColl.doc(fullDocId), {
+          'endTime': Timestamp.fromDate(fullStart.add(const Duration(minutes: 30)))
+        });
+        final old = _cachedEntries[idx];
+        _cachedEntries[idx] = TimelineEntry(
+          id: old.id, userId: old.userId, date: old.date, startTime: old.startTime,
+          endTime: old.startTime.add(const Duration(minutes: 30)),
+          activity: old.activity, notes: old.notes,
+          planactivity: old.planactivity, planNotes: old.planNotes
+        );
+      }
 
       _splitHours.add(hour);
       _cachedEntries.add(newEntry);
     }
 
-    // Rebuild only if the widget is still in the tree; this redraws the two
-    // affected rows without resetting scroll position.
-    
-    // We rely on the StreamBuilder to rebuild the UI when the data changes.
-    // However, we still want to ensure visibility after that update propagates.
-    // This is tricky because we don't know exactly when the frame will render.
-    // But usually local latency compensation is fast.
-    
-    // Workaround: We wait for the stream to likely have updated? 
-    // No, better to genericize the ensureVisible.
-    
-    // For now, let's just remove setState. The StreamBuilder will handle the rebuild.
-    // We can try to attach the scroll correction to the next frame, risking it runs before the stream update.
-    // But if the stream update is synchronous (cached), it works.
+    await batch.commit();
 
   }
 
