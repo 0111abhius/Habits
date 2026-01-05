@@ -10,6 +10,7 @@ import 'screens/template_screen.dart';
 import 'screens/templates_list_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'widgets/auth_gate.dart';
 
 FirebaseFirestore? _testFirestore;
@@ -28,6 +29,7 @@ FirebaseFirestore getFirestore() {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   
   try {
     await Firebase.initializeApp(
