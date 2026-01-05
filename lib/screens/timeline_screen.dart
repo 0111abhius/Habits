@@ -10,10 +10,10 @@ import 'dart:async';
 import '../utils/activities.dart';
 import '../widgets/activity_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'activities_management_screen.dart';
 import 'login_screen.dart';
 import '../widgets/timeline_hour_tile.dart';
 import 'day_planning_assistant.dart';
-import 'activities_management_screen.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -322,14 +322,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
               await _loadUserSettings();
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.edit_note),
-            tooltip: 'Manage Activities',
-            onPressed: () async {
-              await Navigator.push(context, MaterialPageRoute(builder: (ctx) => const ActivitiesManagementScreen()));
-              await _loadUserSettings(); // Refresh when returning
-            },
-          ),
+
           IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Analytics',
@@ -348,7 +341,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   _showSleepDialog(context);
                   break;
                 case 'Activities':
-                  _showActivitiesDialog(context);
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ActivitiesManagementScreen()),
+                  );
+                  await _loadUserSettings();
                   break;
                 case 'habits':
                   Navigator.pushNamed(context, '/habits');
@@ -790,135 +787,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
   }
 
-  Future<void> _showActivitiesDialog(BuildContext context) async {
-    final TextEditingController addCatController = TextEditingController();
-
-    await showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Dialog(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text('Activities', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: addCatController,
-                              decoration: const InputDecoration(labelText: 'Add activity'),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.add),
-                            onPressed: () async {
-                              final newCat = addCatController.text.trim();
-                              if (newCat.isEmpty) return;
-                              setDialogState(() {
-                                _activities.add(newCat);
-                                _archivedActivities.remove(newCat); // ensure it's active
-                                _dedupCats();
-                              });
-                              addCatController.clear();
-                              await _saveSettings(refreshTimeline: true);
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        constraints: const BoxConstraints(maxHeight: 300),
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: _activities.length,
-                          itemBuilder: (context, index) {
-                            final parent = _activities[index];
-                            final subs = _subActivities[parent] ?? [];
-                            final isDefault = _protectedActivities.contains(parent);
-                            final TextEditingController subCtrl = TextEditingController();
-                            return ExpansionTile(
-                              title: Text(_displayLabel(parent)),
-                              trailing: isDefault
-                                  ? null
-                                  : IconButton(
-                                      icon: const Icon(Icons.delete),
-                                      onPressed: () async {
-                                        setDialogState(() {
-                                          _activities.remove(parent);
-                                          if (!_archivedActivities.contains(parent)) {
-                                            _archivedActivities.add(parent);
-                                          }
-                                          // keep subActivities map intact so past subs remain
-                                          _dedupCats();
-                                        });
-                                        await _saveSettings(refreshTimeline: true);
-                                      },
-                                    ),
-                              children: [
-                                ...subs.map((s) => Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(s),
-                                          IconButton(
-                                            icon: const Icon(Icons.delete_outline),
-                                            onPressed: () async {
-                                              await _removeSubactivity(parent, s);
-                                              setDialogState(() {});
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                                    )),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextField(
-                                          controller: subCtrl,
-                                          decoration: const InputDecoration(labelText: 'Add sub-activity'),
-                                        ),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.add_circle_outline),
-                                        onPressed: () async {
-                                          final sub = subCtrl.text.trim();
-                                          if (sub.isEmpty) return;
-                                          await _addSubactivity(parent, sub);
-                                          subCtrl.clear();
-                                          setDialogState(() {});
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
+  // _showActivitiesDialog removed. Use ActivitiesManagementScreen instead.
 
   Future<void> _saveSettings({bool refreshTimeline = true}) async {
     try {
