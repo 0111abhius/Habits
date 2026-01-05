@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../models/timeline_entry.dart';
 import '../main.dart';
@@ -414,8 +415,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('AI Insights'),
-            content: SingleChildScrollView(
-              child: Text(insights),
+            content: SizedBox(
+               width: double.maxFinite,
+               child: SingleChildScrollView(
+                 child: MarkdownBody(data: insights),
+               ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),

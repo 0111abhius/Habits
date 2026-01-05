@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 class AIGoalDialog extends StatelessWidget {
   final String title;
@@ -114,7 +115,12 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
                           if (reasoning.isNotEmpty) ...[
                             Padding(
                               padding: const EdgeInsets.all(8.0),
-                              child: Text('Note: $reasoning', style: const TextStyle(fontStyle: FontStyle.italic)),
+                              child: MarkdownBody(
+                                data: 'Note: $reasoning',
+                                styleSheet: MarkdownStyleSheet(
+                                  p: const TextStyle(fontStyle: FontStyle.italic),
+                                ),
+                              ),
                             ),
                             const Divider(),
                           ],
