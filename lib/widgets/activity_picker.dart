@@ -105,16 +105,74 @@ class _ActivityPickerBodyState extends State<_ActivityPickerBody> {
               ),
               const SizedBox(height: 16),
               Expanded(
-                child: _filtered.isEmpty
-                    ? const Center(child: Text('No match'))
-                    : ListView.builder(
+                child: _searchCtrl.text.isNotEmpty
+                    ? _filtered.isEmpty
+                        ? const Center(child: Text('No match'))
+                        : ListView.builder(
+                            itemCount: _filtered.length,
+                            itemBuilder: (ctx, i) {
+                              final act = _filtered[i];
+                              final label = act == '__custom' ? 'Custom…' : displayActivity(act);
+                              return ListTile(
+                                title: Text(label),
+                                onTap: () => Navigator.pop(context, act),
+                              );
+                            },
+                          )
+                    : GridView.builder(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          childAspectRatio: 1.2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
                         itemCount: _filtered.length,
                         itemBuilder: (ctx, i) {
                           final act = _filtered[i];
-                          final label = act == '__custom' ? 'Custom…' : displayActivity(act);
-                          return ListTile(
-                            title: Text(label),
-                            onTap: () => Navigator.pop(context, act),
+                          if (act == '__custom') {
+                            return InkWell(
+                              onTap: () => Navigator.pop(context, act),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Theme.of(context).colorScheme.outline),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.add, size: 32, color: Theme.of(context).colorScheme.primary),
+                                    const SizedBox(height: 4),
+                                    const Text('Custom', style: TextStyle(fontWeight: FontWeight.w500)),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
+                          // Split emoji and name for nicer layout
+                          final full = displayActivity(act);
+                          // displayActivity returns "Emoji Name" or just "Name".
+                          // Let's try to parse if possible, else just show full center.
+                          return Card(
+                            elevation: 0,
+                            color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3),
+                            shape: RoundedRectangleBorder(
+                              side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            margin: EdgeInsets.zero,
+                            child: InkWell(
+                              onTap: () => Navigator.pop(context, act),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Center(
+                                child: Text(
+                                  full,
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ),
                           );
                         },
                       ),

@@ -212,6 +212,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         await _reconcileSleepEntriesForSelectedDate();
       }
     } catch (e) {
+      if (!mounted) return;
       final messenger = ScaffoldMessenger.maybeOf(context);
       messenger?.showSnackBar(
         const SnackBar(content: Text('Unable to load settings. Please try again later.')),
@@ -302,205 +303,162 @@ class _TimelineScreenState extends State<TimelineScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Timeline'),
-        actions: [
-          ValueListenableBuilder<bool>(
-            valueListenable: _showRetroNotifier,
-            builder: (context, showRetro, _) => IconButton(
-              icon: Icon(showRetro ? Icons.visibility : Icons.visibility_off),
-              tooltip: showRetro ? 'Hide Retro' : 'Show Retro',
-              onPressed: () => _showRetroNotifier.value = !showRetro,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.auto_awesome),
-            tooltip: 'AI Plan',
-            onPressed: () async {
-              await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
-              // Refresh settings to pick up any new activities added by AI
-              await _loadUserSettings();
-            },
-          ),
-
-          IconButton(
-            icon: const Icon(Icons.bar_chart),
-            tooltip: 'Analytics',
-            onPressed: () => Navigator.pushNamed(context, '/analytics'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.access_time),
-            tooltip: 'Jump to Now',
-            onPressed: _scrollToNow,
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Customize',
-            onSelected: (value) async {
-              switch (value) {
-                case 'sleep':
-                  _showSleepDialog(context);
-                  break;
-                case 'Activities':
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ActivitiesManagementScreen()),
-                  );
+      body: CustomScrollView(
+        controller: _scrollController,
+        slivers: [
+          SliverAppBar(
+            title: const Text('Timeline'),
+            floating: true,
+            snap: true,
+            actions: [
+              ValueListenableBuilder<bool>(
+                valueListenable: _showRetroNotifier,
+                builder: (context, showRetro, _) => IconButton(
+                  icon: Icon(showRetro ? Icons.visibility : Icons.visibility_off),
+                  tooltip: showRetro ? 'Hide Retro' : 'Show Retro',
+                  onPressed: () => _showRetroNotifier.value = !showRetro,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.auto_awesome),
+                tooltip: 'AI Plan',
+                onPressed: () async {
+                  await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
                   await _loadUserSettings();
-                  break;
-                case 'habits':
-                  Navigator.pushNamed(context, '/habits');
-                  break;
-                case 'template':
-                  await Navigator.pushNamed(context, '/template');
-                  if (mounted) setState(() {});
-                  break;
-                case 'signout':
-                  await FirebaseAuth.instance.signOut();
-                  // On non-web, also sign out Google account to avoid auto re-auth
-                  try{ await GoogleSignIn().signOut(); } catch(_){}
-                  if (mounted) {
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                    );
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.access_time),
+                tooltip: 'Jump to Now',
+                onPressed: _scrollToNow,
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Customize',
+                onSelected: (value) async {
+                  switch (value) {
+                    case 'sleep':
+                      _showSleepDialog(context);
+                      break;
+                    case 'template':
+                      await Navigator.pushNamed(context, '/template');
+                      if (mounted) setState(() {});
+                      break;
+                    case 'signout':
+                      await FirebaseAuth.instance.signOut();
+                      try{ await GoogleSignIn().signOut(); } catch(_){}
+                      if (mounted) {
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (_) => const LoginScreen()),
+                          (route) => false,
+                        );
+                      }
+                      break;
                   }
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'sleep',
-                child: ListTile(
-                  leading: const Icon(Icons.bedtime),
-                  title: const Text('Sleep timings'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'Activities',
-                child: ListTile(
-                  leading: const Icon(Icons.label),
-                  title: const Text('Activities'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'habits',
-                child: ListTile(
-                  leading: const Icon(Icons.check_circle_outline),
-                  title: const Text('Habits'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'template',
-                child: ListTile(
-                  leading: const Icon(Icons.content_copy),
-                  title: const Text('Template'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'signout',
-                child: ListTile(
-                  leading: const Icon(Icons.logout),
-                  title: const Text('Sign out'),
-                ),
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'sleep',
+                    child: ListTile(
+                      leading: const Icon(Icons.bedtime),
+                      title: const Text('Sleep timings'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'template',
+                    child: ListTile(
+                      leading: const Icon(Icons.content_copy),
+                      title: const Text('Template'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'signout',
+                    child: ListTile(
+                      leading: const Icon(Icons.logout),
+                      title: const Text('Sign out'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          CalendarStrip(
-            selectedDate: selectedDate,
-            onDateSelected: (date) {
-              // Save current offset is already handled by listener.
-              setState(() {
-                // clear controllers when switching date to avoid residue
-                // Note: managed by TimelineHourTile now
-                _blockKeys.clear();
-                
-                selectedDate = date;
-                _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
-                _initStream();
-                _loadDayComplete();
-              });
-
-              // After frame, jump to stored offset or fallback to wake time
-              final key = DateFormat('yyyy-MM-dd').format(selectedDate);
-              final double? saved = _offsetCache[key];
-              if (saved != null) {
-                _pendingScrollOffset = saved;
-              } else {
-                // fallback after list builds
-                _pendingScrollOffset = null;
-                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
-              }
-            },
-            completedDates: _loggedDates,
-          ),
-          ValueListenableBuilder<bool>(
-            valueListenable: _dayCompleteNotifier,
-            builder: (context, done, _) => CheckboxListTile(
-              key: ValueKey(done),
-              title: const Text('Day fully logged'),
-              value: done,
-              onChanged: (val) {
-                if (val != null) _setDayComplete(val);
-              },
-            ),
-          ),
-          ValueListenableBuilder<bool>(
-            valueListenable: _habitsExpandedNotifier,
-            builder: (context, expanded, _) => ExpansionTile(
-              title: const Text('Habits'),
-              initiallyExpanded: expanded,
-              maintainState: true,
-              onExpansionChanged: (val) => _habitsExpandedNotifier.value = val,
+          SliverToBoxAdapter(
+            child: Column(
               children: [
-                HabitTracker(date: selectedDate),
+                CalendarStrip(
+                  selectedDate: selectedDate,
+                  onDateSelected: (date) {
+                    setState(() {
+                      _blockKeys.clear();
+                      selectedDate = date;
+                      _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+                      _initStream();
+                      _loadDayComplete();
+                    });
+                    final key = DateFormat('yyyy-MM-dd').format(selectedDate);
+                    final double? saved = _offsetCache[key];
+                    if (saved != null) {
+                      _pendingScrollOffset = saved;
+                    } else {
+                      _pendingScrollOffset = null;
+                      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
+                    }
+                  },
+                  completedDates: _loggedDates,
+                ),
+                ValueListenableBuilder<bool>(
+                  valueListenable: _dayCompleteNotifier,
+                  builder: (context, done, _) => CheckboxListTile(
+                    key: ValueKey(done),
+                    title: const Text('Day fully logged'),
+                    value: done,
+                    onChanged: (val) {
+                      if (val != null) _setDayComplete(val);
+                    },
+                  ),
+                ),
+                ValueListenableBuilder<bool>(
+                  valueListenable: _habitsExpandedNotifier,
+                  builder: (context, expanded, _) => ExpansionTile(
+                    title: const Text('Habits'),
+                    initiallyExpanded: expanded,
+                    maintainState: true,
+                    onExpansionChanged: (val) => _habitsExpandedNotifier.value = val,
+                    children: [
+                      HabitTracker(date: selectedDate),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-          Expanded(
-            child: _buildTimelineBody(),
+          StreamBuilder<QuerySnapshot>(
+            key: ValueKey(_currentDateKey),
+            stream: _currentStream,
+            builder: _buildTimelineStream,
           ),
+          const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
         ],
       ),
-    );
-  }
-
-  Widget _buildTimelineBody() {
-    return StreamBuilder<QuerySnapshot>(
-      key: ValueKey(_currentDateKey),
-      stream: _currentStream,
-      builder: _buildTimelineStream,
     );
   }
 
   Widget _buildTimelineStream(BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
     if (snapshot.hasError) {
-      return Center(child: Text('Error: ${snapshot.error}'));
+      return SliverFillRemaining(child: Center(child: Text('Error: ${snapshot.error}')));
     }
     if (!snapshot.hasData) {
-      return const Center(child: CircularProgressIndicator());
+      return const SliverFillRemaining(child: Center(child: CircularProgressIndicator()));
     }
     var entries = snapshot.data?.docs
             .map((doc) => TimelineEntry.fromFirestore(doc))
             .toList() ?? [];
 
-    // If this snapshot only represents writes that originated from
-    // this device (i.e. they are still pending confirmation from
-    // the server) then re-use the previously rendered list instead
-    // of forcing a full rebuild. This significantly reduces the
-    // visible flicker that occurred while typing or selecting
-    // Activities because every local write triggered a rebuild of
-    // the entire timeline.
+    // Local updates handling
     final bool onlyLocalUpdates = (snapshot.data != null &&
         snapshot.data!.docChanges.isNotEmpty &&
         snapshot.data!.docChanges.every((c) => c.doc.metadata.hasPendingWrites));
 
     if (onlyLocalUpdates) {
-      // Apply the pending local changes to the cached list so the
-      // UI still reflects the user's edits instantly.
       for (final change in snapshot.data!.docChanges) {
         final updated = TimelineEntry.fromFirestore(change.doc);
         final idx = _cachedEntries.indexWhere((e) => e.id == updated.id);
@@ -523,16 +481,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
       _cachedEntries = entries;
     }
 
-    // update splitHours set based on presence of :30 entries
     _splitHours = entries
         .where((e) => e.startTime.minute == 30)
         .map((e) => e.startTime.hour)
         .toSet();
 
-    // Always attempt to apply template (idempotent)
     _applyTemplateIfNeeded(entries);
 
-    // Autofill sleep blocks only for today or future; leave past dates untouched
     final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final bool isPastDate = selectedDate.isBefore(today);
     if (!isPastDate && sleepTime != null && wakeTime != null) {
@@ -551,52 +506,51 @@ class _TimelineScreenState extends State<TimelineScreen> {
       }
     });
 
-    return SingleChildScrollView(
-      controller: _scrollController,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _showRetroNotifier,
-        builder: (context, showRetro, _) {
-          return Column(
-            children: List.generate(24, (hour) {
-              // Retrieve any existing entries for this hour and minute markers
-              String? _sectionTitle(int h){
-                if(h==6) return 'Morning';
-                if(h==12) return 'Afternoon';
-                if(h==18) return 'Evening';
-                return null;
-              }
+    return SliverToBoxAdapter(
+      child: Column(
+        children: List.generate(24, (index) {
+          final hour = index;
 
-              TimelineEntry _blank(int minute) {
-                final start=DateTime(selectedDate.year,selectedDate.month,selectedDate.day,hour,minute);
-                return TimelineEntry(
-                  id: _docId(start),
-                  userId: FirebaseAuth.instance.currentUser?.uid ?? '',
-                  date: selectedDate,
-                  startTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute),
-                  endTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute).add(Duration(minutes: minute==0?60:30)),
-                  activity: '',
-                  notes: '',
-                );
-              }
+          // Section titles (Morning/Afternoon/Evening)
+          String? sectionTitle;
+          if(hour==6) sectionTitle = 'Morning';
+          if(hour==12) sectionTitle = 'Afternoon';
+          if(hour==18) sectionTitle = 'Evening';
 
-              final entry00 = entries.firstWhere(
-                (e) => e.startTime.hour == hour && e.startTime.minute == 0,
-                orElse: () => _blank(0),
-              );
+          TimelineEntry _blank(int minute) {
+            final start=DateTime(selectedDate.year,selectedDate.month,selectedDate.day,hour,minute);
+            return TimelineEntry(
+              id: _docId(start),
+              userId: FirebaseAuth.instance.currentUser?.uid ?? '',
+              date: selectedDate,
+              startTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute),
+              endTime: DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute).add(Duration(minutes: minute==0?60:30)),
+              activity: '',
+              notes: '',
+            );
+          }
 
-              final entry30 = _splitHours.contains(hour)
-                  ? entries.firstWhere(
-                      (e) => e.startTime.hour == hour && e.startTime.minute == 30,
-                      orElse: () => _blank(30),
-                    )
-                  : null;
-              
-              final key00 = _blockKeys.putIfAbsent(_noteKey(hour, 0), () => GlobalKey());
-              final key30 = _splitHours.contains(hour) 
-                  ? _blockKeys.putIfAbsent(_noteKey(hour, 30), () => GlobalKey())
-                  : null;
+          final entry00 = entries.firstWhere(
+            (e) => e.startTime.hour == hour && e.startTime.minute == 0,
+            orElse: () => _blank(0),
+          );
 
-              final tile = TimelineHourTile(
+          final entry30 = _splitHours.contains(hour)
+              ? entries.firstWhere(
+                  (e) => e.startTime.hour == hour && e.startTime.minute == 30,
+                  orElse: () => _blank(30),
+                )
+              : null;
+          
+          final key00 = _blockKeys.putIfAbsent(_noteKey(hour, 0), () => GlobalKey());
+          final key30 = _splitHours.contains(hour) 
+              ? _blockKeys.putIfAbsent(_noteKey(hour, 30), () => GlobalKey())
+              : null;
+
+          final tile = ValueListenableBuilder<bool>(
+            valueListenable: _showRetroNotifier,
+            builder: (context, showRetro, _) {
+              return TimelineHourTile(
                 key: ValueKey(hour),
                 hour: hour,
                 entry00: entry00,
@@ -609,46 +563,42 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 recentActivities: _recentActivities,
                 onPromptCustomActivity: () => _promptCustomActivity(context),
                 onUpdateRecentActivity: (act) {
-                  bool changed = false;
-                  
-                  // 1. Update Recent (Ordering)
-                  if (!_recentActivities.contains(act)) {
-                    _recentActivities.insert(0, act);
-                    if (_recentActivities.length > 8) _recentActivities.removeLast();
-                    changed = true;
-                  }
-                  
-                  // 2. Implicit Save to Permanent Dictionary
-                  // If it's not in our known list (and not archived), save it.
-                  if (!_activities.contains(act) && !_archivedActivities.contains(act)) {
-                     _activities.add(act);
-                     // _dedupCats() handles sorting/cleaning
-                     _dedupCats(); 
-                     changed = true;
-                  }
-
-                  if (changed) {
-                    setState(() {});
-                    _saveSettings();
-                  }
+                    bool changed = false;
+                    if (!_recentActivities.contains(act)) {
+                      _recentActivities.insert(0, act);
+                      if (_recentActivities.length > 8) _recentActivities.removeLast();
+                      changed = true;
+                    }
+                    if (!_activities.contains(act) && !_archivedActivities.contains(act)) {
+                       _activities.add(act);
+                       _dedupCats(); 
+                       changed = true;
+                    }
+                    if (changed) {
+                      setState(() {});
+                      _saveSettings();
+                    }
                 },
                 key00: key00,
                 key30: key30,
               );
-
-              final List<Widget> cardChildren=[];
-              final section=_sectionTitle(hour);
-              if(section!=null){
-                cardChildren.add(Padding(
-                  padding: const EdgeInsets.symmetric(horizontal:16,vertical:8),
-                  child: Text(section,style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                ));
-              }
-              cardChildren.add(tile);
-              return Column(children: cardChildren);
-            }),
+            }
           );
-        }
+
+          if (sectionTitle != null) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal:16,vertical:8),
+                  child: Text(sectionTitle, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                ),
+                tile,
+              ],
+            );
+          }
+          return tile;
+        }),
       ),
     );
   }

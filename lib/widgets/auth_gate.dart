@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../screens/login_screen.dart';
-import '../screens/timeline_screen.dart';
+import '../widgets/main_scaffold.dart';
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -17,7 +17,7 @@ class AuthGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData) {
-          return const TimelineScreen();
+          return const MainScaffold();
         }
         return const LoginScreen();
       },

@@ -12,6 +12,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'widgets/auth_gate.dart';
+import 'widgets/main_scaffold.dart';
 
 FirebaseFirestore? _testFirestore;
 
@@ -78,6 +79,7 @@ class MyApp extends StatelessWidget {
       ),
       home: const AuthGate(),
       routes: {
+        '/home': (context) => const MainScaffold(),
         '/timeline': (context) => const TimelineScreen(),
         '/habits': (context) => const HabitsScreen(),
         '/analytics': (context) => const AnalyticsScreen(),

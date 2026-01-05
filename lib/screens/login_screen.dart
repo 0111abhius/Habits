@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'timeline_screen.dart';
+import '../widgets/main_scaffold.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class LoginScreen extends StatefulWidget {
@@ -38,7 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const TimelineScreen()),
+          MaterialPageRoute(builder: (context) => const MainScaffold()),
         );
       }
     } on FirebaseAuthException catch (e) {
@@ -73,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const TimelineScreen()),
+          MaterialPageRoute(builder: (context) => const MainScaffold()),
         );
       }
     } catch (e) {
@@ -101,7 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const TimelineScreen()),
+          MaterialPageRoute(builder: (context) => const MainScaffold()),
         );
       }
     } on FirebaseAuthException catch (e) {

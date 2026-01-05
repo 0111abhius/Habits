@@ -156,13 +156,12 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
 
     final bool isSleepRow = widget.entry00.activity == 'Sleep';
 
-    final container = Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: isSleepRow ? Colors.blueGrey.withOpacity(0.04) : Theme.of(context).colorScheme.surfaceVariant,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
-      ),
+    final container = Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: isSleepRow ? Colors.blueGrey.withOpacity(0.05) : Theme.of(context).colorScheme.surface,
+      surfaceTintColor: Theme.of(context).colorScheme.surfaceTint,
       child: Column(
             children: [
               // Custom Header Row
@@ -234,10 +233,11 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     Widget planColumn = Expanded(
       child: Container(
         decoration: BoxDecoration(
-          color: _planBg(context),
+          color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3),
           borderRadius: widget.showRetro
-              ? const BorderRadius.only(topLeft: Radius.circular(8), bottomLeft: Radius.circular(8))
-              : BorderRadius.circular(8),
+              ? const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12))
+              : BorderRadius.circular(12),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
         ),
         padding: const EdgeInsets.all(8),
         child: Column(
@@ -287,8 +287,9 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     // Retro Column
     Widget retroColumn = Container(
       decoration: BoxDecoration(
-        color: _retroBg(context),
-        borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)),
+        color: Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.1),
+        borderRadius: const BorderRadius.only(topRight: Radius.circular(12), bottomRight: Radius.circular(12)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
       ),
       padding: const EdgeInsets.all(8),
       child: Column(
