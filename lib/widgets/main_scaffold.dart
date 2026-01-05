@@ -30,6 +30,12 @@ class _MainScaffoldState extends State<MainScaffold> {
     return Scaffold(
       body: NotificationListener<UserScrollNotification>(
         onNotification: (notification) {
+          // If content fits the screen (no meaningful scroll extent), never hide the bottom bar
+          if (notification.metrics.maxScrollExtent < 50) {
+            if (!_isBottomBarVisible) setState(() => _isBottomBarVisible = true);
+            return true;
+          }
+
           if (notification.direction == ScrollDirection.reverse) {
             // User scrolling down -> Hide
             if (_isBottomBarVisible) setState(() => _isBottomBarVisible = false);
@@ -53,6 +59,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             onDestinationSelected: (index) {
               setState(() {
                 _currentIndex = index;
+                _isBottomBarVisible = true;
               });
             },
             destinations: const [

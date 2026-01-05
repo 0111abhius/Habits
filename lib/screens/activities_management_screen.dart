@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart'; // for getFirestore()
 import '../utils/activities.dart';
+import 'dart:async';
 
 class ActivitiesManagementScreen extends StatefulWidget {
   const ActivitiesManagementScreen({super.key});
@@ -19,45 +20,74 @@ class _ActivitiesManagementScreenState extends State<ActivitiesManagementScreen>
   
   final TextEditingController _addController = TextEditingController();
 
+  StreamSubscription<DocumentSnapshot>? _subscription;
+
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _subscribeToData();
   }
   
   @override
   void dispose() {
+    _subscription?.cancel();
     _addController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    setState(() => _loading = true);
+  void _subscribeToData() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    final doc = await getFirestore().collection('user_settings').doc(uid).get();
-    if (doc.exists) {
-      final data = doc.data()!;
-      _activities = List<String>.from(data['customActivities'] ?? []);
-      _archived = List<String>.from(data['archivedActivities'] ?? []);
-      _subActivities = Map<String, List<dynamic>>.from(data['subActivities'] ?? {});
-    } else {
-      _activities = List.from(kDefaultActivities);
-      _archived = [];
-      _subActivities = {};
+    if (uid == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
     }
-    
-    // Ensure all activities have an entry in subActivities map (convenience)
-    for (final a in _activities) {
-      if (!_subActivities.containsKey(a)) _subActivities[a] = [];
-    }
-    
-    // Sort alphabetically
-    _activities.sort();
-    _archived.sort();
 
-    if (mounted) setState(() => _loading = false);
+    _subscription = getFirestore().collection('user_settings').doc(uid).snapshots().listen((doc) {
+      if (!mounted) return;
+      
+      List<String> newActivities = [];
+      List<String> newArchived = [];
+      Map<String, List<dynamic>> newSubs = {};
+
+      if (doc.exists) {
+        final data = doc.data()!;
+        final customActs = List<String>.from(data['customActivities'] ?? []);
+        // Always combine with defaults for the view
+        newActivities = [
+          ...kDefaultActivities,
+          ...customActs,
+        ];
+        
+        newArchived = List<String>.from(data['archivedActivities'] ?? []);
+        newSubs = Map<String, List<dynamic>>.from(data['subActivities'] ?? {});
+      } else {
+        newActivities = List.from(kDefaultActivities);
+        newArchived = [];
+        newSubs = {};
+      }
+      
+      // Ensure all activities have an entry in subActivities map (convenience)
+      for (final a in newActivities) {
+        if (!newSubs.containsKey(a)) newSubs[a] = [];
+      }
+      
+      // Sort alphabetically
+      newActivities.sort();
+      newArchived.sort();
+
+      // Deduplicate
+      newActivities = newActivities.toSet().toList();
+
+      setState(() {
+        _activities = newActivities;
+        _archived = newArchived;
+        _subActivities = newSubs;
+        _loading = false;
+      });
+    }, onError: (e) {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading activities: $e')));
+      setState(() => _loading = false);
+    });
   }
 
   Future<void> _saveAll() async {
@@ -235,13 +265,12 @@ class _ActivitiesManagementScreenState extends State<ActivitiesManagementScreen>
       }
 
       await batch.commit();
-      await _loadData(); // Reload UI
+
 
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Update successful')));
 
     } catch (e) {
       scaffoldMessenger.showSnackBar(SnackBar(content: Text('Error: $e')));
-      await _loadData();
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -339,6 +368,7 @@ class _ActivitiesManagementScreenState extends State<ActivitiesManagementScreen>
                 const Divider(height: 1),
                 Expanded(
                   child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     itemCount: _activities.length,
                     itemBuilder: (ctx, i) {
                       final act = _activities[i];
