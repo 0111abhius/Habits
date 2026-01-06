@@ -219,132 +219,125 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
       available.add(entry.planactivity);
     }
 
-    final dropdownValue = (entry.activity.isNotEmpty && available.contains(entry.activity)) ? entry.activity : null;
-
     final planCtrl = _planControllers[minute]!;
     final retroCtrl = _retroControllers[minute]!;
 
-    // Plan Column
-    Widget planColumn = Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3),
-        borderRadius: widget.viewMode == TimelineViewMode.compare
-            ? const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12))
-            : BorderRadius.circular(12),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
-      ),
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          OutlinedButton(
-            onPressed: () async {
-              final picked = await showActivityPicker(
-                context: context,
-                allActivities: available,
-                recent: widget.recentActivities,
-              );
-              if (picked == null) return;
-              if (picked == '__custom') {
-                final custom = await widget.onPromptCustomActivity();
-                if (custom != null && custom.isNotEmpty) {
-                  widget.onUpdateRecentActivity(custom);
-                  widget.onUpdateEntry(entry, custom, entry.planNotes, isPlan: true);
-                }
-              } else {
-                widget.onUpdateRecentActivity(picked);
-                widget.onUpdateEntry(entry, picked, entry.planNotes, isPlan: true);
-              }
-            },
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                entry.planactivity.isEmpty ? 'Plan' : _displayLabel(entry.planactivity),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          TextField(
-            controller: planCtrl,
-            maxLines: null,
-            decoration: const InputDecoration(hintText: 'Notes', border: InputBorder.none),
-            onChanged: (val) => _onNoteChanged(minute, val, entry, true),
-          ),
-        ],
-      ),
-    );
+    Widget buildSlot({required bool isPlan, required TextEditingController ctrl}) {
+      final currentAct = isPlan ? entry.planactivity : entry.activity;
+      final isEmpty = currentAct.isEmpty;
 
-    // Retro Column
-    Widget retroColumn = Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.1),
-        borderRadius: widget.viewMode == TimelineViewMode.compare
-          ? const BorderRadius.only(topRight: Radius.circular(12), bottomRight: Radius.circular(12))
-          : BorderRadius.circular(12),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
-      ),
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          OutlinedButton(
-            onPressed: () async {
-              final picked = await showActivityPicker(
-                context: context,
-                allActivities: available,
-                recent: widget.recentActivities,
-              );
-              if (picked == null) return;
-              if (picked == '__custom') {
-                final custom = await widget.onPromptCustomActivity();
-                if (custom != null && custom.isNotEmpty) {
-                  widget.onUpdateRecentActivity(custom);
-                  widget.onUpdateEntry(entry, custom, entry.notes, isPlan: false);
-                }
-              } else {
-                widget.onUpdateRecentActivity(picked);
-                widget.onUpdateEntry(entry, picked, entry.notes, isPlan: false);
-              }
-            },
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                dropdownValue == null ? 'Retro' : _displayLabel(dropdownValue),
-                overflow: TextOverflow.ellipsis,
+      return Container(
+        decoration: BoxDecoration(
+          color: isPlan 
+            ? Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3)
+            : Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.1),
+          borderRadius: widget.viewMode == TimelineViewMode.compare
+              ? BorderRadius.horizontal(
+                  left: isPlan ? const Radius.circular(12) : Radius.zero,
+                  right: isPlan ? Radius.zero : const Radius.circular(12))
+              : BorderRadius.circular(12),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+        ),
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.add, size: 16),
+                    label: const Text('Pick'),
+                    onPressed: () async {
+                      final picked = await showActivityPicker(
+                        context: context,
+                        allActivities: available,
+                         recent: widget.recentActivities,
+                      );
+                      if (picked != null) {
+                         if (picked == '__custom') {
+                            final custom = await widget.onPromptCustomActivity();
+                            if (custom != null && custom.isNotEmpty) {
+                              widget.onUpdateRecentActivity(custom);
+                              widget.onUpdateEntry(entry, custom, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                            }
+                         } else {
+                            widget.onUpdateRecentActivity(picked);
+                            widget.onUpdateEntry(entry, picked, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                         }
+                      }
+                    },
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  ...widget.recentActivities.take(3).map((act) => ActionChip(
+                    label: Text(_displayLabel(act)),
+                    onPressed: () {
+                         widget.onUpdateRecentActivity(act);
+                         widget.onUpdateEntry(entry, act, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                    },
+                    visualDensity: VisualDensity.compact,
+                    backgroundColor: Theme.of(context).colorScheme.surface,
+                  )),
+                ],
               ),
+            ] else 
+              OutlinedButton(
+                onPressed: () async {
+                  final picked = await showActivityPicker(
+                    context: context,
+                    allActivities: available,
+                    recent: widget.recentActivities,
+                  );
+                  if (picked == null) return;
+                  if (picked == '__custom') {
+                    final custom = await widget.onPromptCustomActivity();
+                    if (custom != null && custom.isNotEmpty) {
+                      widget.onUpdateRecentActivity(custom);
+                      widget.onUpdateEntry(entry, custom, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                    }
+                  } else {
+                    widget.onUpdateRecentActivity(picked);
+                    widget.onUpdateEntry(entry, picked, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                  alignment: Alignment.centerLeft,
+                ),
+                child: Text(
+                  _displayLabel(currentAct),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            
+            TextField(
+              controller: ctrl,
+              maxLines: null,
+              decoration: const InputDecoration(hintText: 'Notes', border: InputBorder.none),
+              onChanged: (val) => _onNoteChanged(minute, val, entry, isPlan),
             ),
-          ),
-          TextField(
-            controller: retroCtrl,
-            maxLines: null,
-            decoration: const InputDecoration(hintText: 'Notes', border: InputBorder.none),
-            onChanged: (val) => _onNoteChanged(minute, val, entry, false),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
+    }
 
     // Combine
     Widget innerRow;
     switch (widget.viewMode) {
       case TimelineViewMode.plan:
-        innerRow = Row(children: [Expanded(child: planColumn)]); // Expanded ensures full width
+        innerRow = Row(children: [Expanded(child: buildSlot(isPlan: true, ctrl: planCtrl))]); // Expanded ensures full width
         break;
       case TimelineViewMode.actual:
-        innerRow = Row(children: [Expanded(child: retroColumn)]);
+        innerRow = Row(children: [Expanded(child: buildSlot(isPlan: false, ctrl: retroCtrl))]);
         break;
       case TimelineViewMode.compare:
         innerRow = Row(
           children: [
-            Expanded(child: planColumn),
+            Expanded(child: buildSlot(isPlan: true, ctrl: planCtrl)),
             const SizedBox(width: 4),
-            Expanded(child: retroColumn),
+            Expanded(child: buildSlot(isPlan: false, ctrl: retroCtrl)),
           ],
         );
         break;
