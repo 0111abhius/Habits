@@ -8,7 +8,7 @@ import '../utils/ai_service.dart';
 import '../models/timeline_entry.dart';
 import '../main.dart';
 import '../models/habit.dart';
-import 'package:fl_chart/fl_chart.dart';
+
 import 'dart:math' as math;
 import '../utils/ai_service.dart';
 
@@ -532,7 +532,7 @@ Pay special attention to where my 'Actual' activity differed from my 'Planned' a
 
                   return ListView(
                     children: [
-                      _buildPieChart(sorted),
+
                       ..._buildactivityTiles(sorted, totalHours),
                       ListTile(
                         title: const Text('Days logged in range'),
@@ -651,127 +651,6 @@ Pay special attention to where my 'Actual' activity differed from my 'Planned' a
     }
     return tiles;
   }
-
-  Widget _buildPieChart(List<MapEntry<String, double>> data) {
-    if (data.isEmpty) return const SizedBox.shrink();
-
-    // Group small values into "Other" to avoid clutter
-    final total = data.fold(0.0, (sum, e) => sum + e.value);
-    final threshold = total * 0.05; // 5%
-
-    final List<MapEntry<String, double>> chartData = [];
-    double otherSum = 0;
-
-    for (final e in data) {
-      if (e.value >= threshold) {
-        chartData.add(e);
-      } else {
-        otherSum += e.value;
-      }
-    }
-    if (otherSum > 0) {
-      chartData.add(MapEntry('Other', otherSum));
-    }
-
-    return AspectRatio(
-      aspectRatio: 1.3,
-      child: Card(
-        margin: const EdgeInsets.all(8),
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Text('Activity Distribution', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 16),
-              Expanded(
-                child: PieChart(
-                  PieChartData(
-                    sectionsSpace: 2,
-                    centerSpaceRadius: 40,
-                    sections: chartData.map((e) {
-                      final isOther = e.key == 'Other';
-                      final color = isOther 
-                          ? Colors.grey 
-                          : Colors.primaries[chartData.indexOf(e) % Colors.primaries.length];
-                      return PieChartSectionData(
-                        color: color,
-                        value: e.value,
-                        title: '${(e.value/total*100).toStringAsFixed(0)}%',
-                        radius: 50,
-                        titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                        badgeWidget: isOther ? null : _Badge(e.key, size: 40, borderColor: color),
-                        badgePositionPercentageOffset: .98,
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                alignment: WrapAlignment.center,
-                children: chartData.map((e) {
-                  final i = chartData.indexOf(e);
-                  final color = e.key == 'Other' ? Colors.grey : Colors.primaries[i % Colors.primaries.length];
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(width: 12, height: 12, color: color),
-                      const SizedBox(width: 4),
-                      Text(e.key, style: Theme.of(context).textTheme.bodySmall),
-                    ],
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-class _Badge extends StatelessWidget {
-  final String text;
-  final double size;
-  final Color borderColor;
-
-  const _Badge(
-    this.text, {
-    required this.size,
-    required this.borderColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: PieChart.defaultDuration,
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: borderColor,
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(.5),
-            offset: const Offset(3, 3),
-            blurRadius: 3,
-          ),
-        ],
-      ),
-      child: Center(
-        child: Text(
-          text.characters.first.toUpperCase(), 
-          style: TextStyle(fontWeight: FontWeight.bold, color: borderColor)
-        ),
-      ),
-    );
-  }
-} 
+ 

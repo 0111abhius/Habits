@@ -324,13 +324,20 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   onPressed: () => _setDayComplete(!done),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.auto_awesome),
-                tooltip: 'AI Plan',
-                onPressed: () async {
-                  await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
-                  await _loadUserSettings();
-                },
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                    await _loadUserSettings();
+                  },
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  label: const Text('AI Plan'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    side: BorderSide(color: Theme.of(context).primaryColor),
+                  ),
+                ),
               ),
 
               PopupMenuButton<String>(
