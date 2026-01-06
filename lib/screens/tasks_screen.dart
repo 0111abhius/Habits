@@ -587,26 +587,132 @@ class _TasksScreenState extends State<TasksScreen> {
                 Icon(Icons.timer_outlined, size: 14, color: Colors.grey[600]),
                 const SizedBox(width: 4),
                 Text(timeLabel, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                if (task.folder != null && _selectedFolder == null) ...[ // Should we show folder label? Maybe not needed if grouped?
-                   // No, redundancy.
-                ]
             ],
             ),
-            trailing: isActive ? IconButton(
-                icon: Icon(
-                    task.isToday ? Icons.today : Icons.calendar_today_outlined,
-                    color: task.isToday ? Colors.orange : Colors.grey,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isActive) 
+                  IconButton(
+                    icon: Icon(
+                        task.isToday ? Icons.today : Icons.calendar_today_outlined,
+                        color: task.isToday ? Colors.orange : Colors.grey,
+                    ),
+                    onPressed: () => _toggleToday(task),
+                    tooltip: task.isToday ? 'Planned for Today' : 'Add to Today',
                 ),
-                onPressed: () => _toggleToday(task),
-                tooltip: task.isToday ? 'Planned for Today' : 'Add to Today',
-            ) : null,
-            onLongPress: () {
-                // Optional: Move task to another folder via dialog
-                _showMoveTaskDialog(task);
-            },
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (val) {
+                    if (val == 'edit') {
+                      _showEditTaskDialog(task);
+                    } else if (val == 'move') {
+                      _showMoveTaskDialog(task);
+                    } else if (val == 'delete') {
+                      _deleteTaskConfirm(task);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, size: 20), SizedBox(width: 8), Text('Edit')])),
+                    const PopupMenuItem(value: 'move', child: Row(children: [Icon(Icons.folder_open, size: 20), SizedBox(width: 8), Text('Move Folder')])),
+                    const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, color: Colors.red, size: 20), SizedBox(width: 8), Text('Delete', style: TextStyle(color: Colors.red))])),
+                  ],
+                ),
+              ],
+            ),
         ),
         ),
     );
+  }
+
+  Future<void> _deleteTaskConfirm(Task task) async {
+    final confirm = await showDialog<bool>(
+        context: context, 
+        builder: (ctx) => AlertDialog(
+            title: const Text('Delete Task?'),
+            content: const Text('Are you sure you want to delete this task?'),
+            actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+            ],
+        )
+    );
+    if (confirm == true) {
+      _deleteTask(task.id);
+    }
+  }
+
+  Future<void> _showEditTaskDialog(Task task) async {
+    final titleController = TextEditingController(text: task.title);
+    int estimatedMinutes = task.estimatedMinutes;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Edit Task'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleController,
+                  decoration: const InputDecoration(labelText: 'Task Title'),
+                  textCapitalization: TextCapitalization.sentences,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Text('Estimate: '),
+                    const SizedBox(width: 8),
+                    DropdownButton<int>(
+                      value: estimatedMinutes,
+                      items: [30, 60, 90, 120, 150, 180, 240, 300].map((m) {
+                        final hours = m / 60;
+                        final label = hours == hours.toInt() 
+                          ? '${hours.toInt()}h' 
+                          : '${hours.toStringAsFixed(1)}h';
+                        return DropdownMenuItem(value: m, child: Text(label));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) setDialogState(() => estimatedMinutes = val);
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final newTitle = titleController.text.trim();
+                  if (newTitle.isNotEmpty) {
+                    await _updateTask(task, newTitle, estimatedMinutes);
+                    Navigator.pop(ctx);
+                  }
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+
+  Future<void> _updateTask(Task task, String newTitle, int newMinutes) async {
+    try {
+      await getFirestore().collection('tasks').doc(task.id).update({
+        'title': newTitle,
+        'estimatedMinutes': newMinutes,
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error updating task: $e')));
+    }
   }
 
   Future<void> _showMoveTaskDialog(Task task) async {
