@@ -332,11 +332,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   await _loadUserSettings();
                 },
               ),
-              IconButton(
-                icon: const Icon(Icons.access_time),
-                tooltip: 'Jump to Now',
-                onPressed: _scrollToNow,
-              ),
+
               PopupMenuButton<String>(
                 tooltip: 'Customize',
                 onSelected: (value) async {
@@ -433,6 +429,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                       delegate: TimelineViewHeaderDelegate(
                         currentMode: mode,
                         onModeChanged: (newMode) => _viewModeNotifier.value = newMode,
+                        onJumpToNow: _scrollToNow,
                       ),
                     );
                   },
