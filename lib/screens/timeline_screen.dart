@@ -644,12 +644,22 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
       final docId = _docId(entry.startTime);
 
+      // Calculate strict end time to prevent overlaps
+      DateTime newEndTime;
+      if (_splitHours.contains(entry.startTime.hour)) {
+        // Split hour: strictly 30 minutes
+        newEndTime = entry.startTime.add(const Duration(minutes: 30));
+      } else {
+        // Full hour: strictly 60 minutes
+        newEndTime = entry.startTime.add(const Duration(hours: 1));
+      }
+
       final fullEntry = TimelineEntry(
         id: docId,
         userId: user.uid,
         date: entry.date,
         startTime: entry.startTime,
-        endTime: entry.endTime,
+        endTime: newEndTime,
         planactivity: isPlan ? activity : entry.planactivity,
         planNotes: isPlan ? notes : entry.planNotes,
         activity: isPlan ? entry.activity : activity,

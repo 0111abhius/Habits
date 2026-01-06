@@ -16,16 +16,18 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
-    const TimelineScreen(),
-    const TasksScreen(),
-    const HabitsScreen(),
-    const AnalyticsScreen(),
-    const ActivitiesManagementScreen(),
-  ];
+  int _analyticsRefreshCounter = 0;
 
   @override
   bool _isBottomBarVisible = true;
+
+  List<Widget> get _screens => [
+    const TimelineScreen(),
+    const TasksScreen(),
+    const HabitsScreen(),
+    AnalyticsScreen(key: ValueKey('analytics_$_analyticsRefreshCounter')),
+    const ActivitiesManagementScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +64,9 @@ class _MainScaffoldState extends State<MainScaffold> {
               setState(() {
                 _currentIndex = index;
                 _isBottomBarVisible = true;
+                if (index == 3) {
+                  _analyticsRefreshCounter++;
+                }
               });
             },
             destinations: const [

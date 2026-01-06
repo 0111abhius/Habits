@@ -140,12 +140,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         .where((e) => completedDates.contains(dateFormat.format(e.date)))
         .toList();
 
-    // Aggregate hours per activity (sum then convert to avg per day)
+    // Sort entries to handle overlaps correctly
+    entries.sort((a, b) => a.startTime.compareTo(b.startTime));
+
+    // Aggregate hours per activity (handling overlaps)
     final Map<String, double> totals = {};
-    for (final entry in entries) {
-      final durationHours = entry.endTime.difference(entry.startTime).inMinutes / 60.0;
-      final cat = entry.activity.isEmpty ? 'Uncategorised' : entry.activity;
-      totals[cat] = (totals[cat] ?? 0) + durationHours;
+    for (int i = 0; i < entries.length; i++) {
+        final current = entries[i];
+        DateTime effectiveEnd = current.endTime;
+
+        // Clip duration if next entry starts before this one ends (e.g. split hours)
+        if (i + 1 < entries.length) {
+            final next = entries[i + 1];
+            if (next.startTime.isBefore(effectiveEnd) && next.startTime.isAfter(current.startTime)) {
+                effectiveEnd = next.startTime;
+            }
+        }
+
+        final durationMinutes = effectiveEnd.difference(current.startTime).inMinutes;
+        // Ensure we don't have negative duration
+        final durationHours = (durationMinutes < 0 ? 0 : durationMinutes) / 60.0;
+        
+        final cat = current.activity.isEmpty ? 'Uncategorised' : current.activity;
+        totals[cat] = (totals[cat] ?? 0) + durationHours;
     }
 
     // convert to average hours per day
