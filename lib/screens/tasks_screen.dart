@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/task.dart';
+import '../models/user_settings.dart';
 import '../main.dart'; // for getFirestore()
 
 class TasksScreen extends StatefulWidget {
@@ -16,11 +17,159 @@ class _TasksScreenState extends State<TasksScreen> {
   bool _isToday = false;
   int _estimatedMinutes = 30;
   bool _isLoading = false;
+  String? _selectedFolder; // null means Default/Inbox
+  List<String> _folders = [];
+  bool _foldersLoaded = false;
+  String _defaultFolderName = 'Inbox';
+  final Map<String, bool> _folderExpansions = {}; // Track expansion state
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFolders();
+  }
 
   @override
   void dispose() {
     _taskController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadFolders() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    
+    try {
+      final doc = await getFirestore().collection('user_settings').doc(uid).get();
+      if (doc.exists) {
+        final settings = UserSettings.fromMap(doc.data()!);
+        setState(() {
+          _folders = settings.taskFolders;
+          _foldersLoaded = true;
+          _defaultFolderName = settings.defaultFolderName;
+          // Initialize expansion states if new
+          for (var f in _folders) {
+            _folderExpansions.putIfAbsent(f, () => false); // collapsed by default? or true?
+          }
+          _folderExpansions.putIfAbsent(_defaultFolderName, () => true);
+        });
+      } else {
+        setState(() => _foldersLoaded = true);
+      }
+    } catch (e) {
+      print('Error loading folders: $e');
+      setState(() => _foldersLoaded = true);
+    }
+  }
+
+  Future<void> _createFolder(String name) async {
+    if (name.isEmpty || _folders.contains(name)) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      final settingsRef = getFirestore().collection('user_settings').doc(uid);
+      final newFolders = [..._folders, name];
+      await settingsRef.set({'taskFolders': newFolders}, SetOptions(merge: true));
+      setState(() {
+        _folders = newFolders;
+        _folderExpansions[name] = true;
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error creating folder: $e')));
+    }
+  }
+
+  Future<void> _deleteFolder(String name) async {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+
+      try {
+          final settingsRef = getFirestore().collection('user_settings').doc(uid);
+          final newFolders = List<String>.from(_folders)..remove(name);
+          await settingsRef.set({'taskFolders': newFolders}, SetOptions(merge: true));
+          
+          // Optionally move tasks to Inbox (remove folder field)
+          final tasksQuery = await getFirestore().collection('tasks')
+              .where('userId', isEqualTo: uid)
+              .where('folder', isEqualTo: name)
+              .get();
+          
+          final batch = getFirestore().batch();
+          for (var doc in tasksQuery.docs) {
+              batch.update(doc.reference, {'folder': null});
+          }
+          await batch.commit();
+
+          setState(() {
+              _folders = newFolders;
+              _folderExpansions.remove(name);
+              if (_selectedFolder == name) _selectedFolder = null;
+          });
+      } catch (e) {
+         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error deleting folder: $e')));
+      }
+  }
+
+  Future<void> _renameFolder(String oldName, String newName) async {
+      if (newName.isEmpty || _folders.contains(newName)) return;
+      
+      // Special case for Default Folder
+      if (oldName == _defaultFolderName) {
+          if (newName == _defaultFolderName) return; // no change
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid == null) return;
+          try {
+              final settingsRef = getFirestore().collection('user_settings').doc(uid);
+              await settingsRef.set({'defaultFolderName': newName}, SetOptions(merge: true));
+              
+              setState(() {
+                  final expanded = _folderExpansions[oldName] ?? false;
+                  _folderExpansions.remove(oldName);
+                  _folderExpansions[newName] = expanded;
+                  _defaultFolderName = newName;
+              });
+          } catch(e) {
+               if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error renaming default folder: $e')));
+          }
+          return;
+      }
+
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+
+      try {
+          final settingsRef = getFirestore().collection('user_settings').doc(uid);
+          int idx = _folders.indexOf(oldName);
+          if (idx == -1) return;
+          
+          final newFolders = List<String>.from(_folders);
+          newFolders[idx] = newName;
+          
+          await settingsRef.set({'taskFolders': newFolders}, SetOptions(merge: true));
+
+           // Move tasks
+          final tasksQuery = await getFirestore().collection('tasks')
+              .where('userId', isEqualTo: uid)
+              .where('folder', isEqualTo: oldName)
+              .get();
+          
+          final batch = getFirestore().batch();
+          for (var doc in tasksQuery.docs) {
+              batch.update(doc.reference, {'folder': newName});
+          }
+          await batch.commit();
+
+          setState(() {
+              _folders = newFolders;
+              final expanded = _folderExpansions[oldName] ?? false;
+              _folderExpansions.remove(oldName);
+              _folderExpansions[newName] = expanded;
+              if (_selectedFolder == oldName) _selectedFolder = newName;
+          });
+      } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error renaming folder: $e')));
+      }
   }
 
   Future<void> _addTask() async {
@@ -41,6 +190,7 @@ class _TasksScreenState extends State<TasksScreen> {
         isToday: _isToday,
         estimatedMinutes: _estimatedMinutes,
         createdAt: DateTime.now(),
+        folder: _selectedFolder,
       );
 
       await docRef.set(newTask.toMap());
@@ -105,7 +255,42 @@ class _TasksScreenState extends State<TasksScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Center(child: Text('Please log in'));
 
+    if (!_foldersLoaded) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Tasks'),
+        actions: [
+            IconButton(
+                icon: const Icon(Icons.create_new_folder_outlined),
+                tooltip: 'New Folder',
+                onPressed: () async {
+                    final c = TextEditingController();
+                    final name = await showDialog<String>(
+                        context: context, 
+                        builder: (ctx) => AlertDialog(
+                            title: const Text('New Folder'),
+                            content: TextField(
+                                controller: c, 
+                                autofocus: true, 
+                                decoration: const InputDecoration(hintText: 'Folder Name'),
+                                textCapitalization: TextCapitalization.sentences,
+                            ),
+                            actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                                TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Create')),
+                            ],
+                        )
+                    );
+                    if (name != null && name.isNotEmpty) {
+                        _createFolder(name);
+                    }
+                },
+            ),
+        ],
+      ),
       body: Column(
         children: [
           // Input Section
@@ -142,6 +327,20 @@ class _TasksScreenState extends State<TasksScreen> {
                      scrollDirection: Axis.horizontal,
                      child: Row(
                        children: [
+                         // Folder Selector
+                         DropdownButton<String?>(
+                           value: _selectedFolder,
+                           hint: Text(_defaultFolderName),
+                           underline: Container(),
+                           items: [
+                               DropdownMenuItem(value: null, child: Text(_defaultFolderName)),
+                               ..._folders.map((f) => DropdownMenuItem(value: f, child: Text(f))),
+                           ],
+                           onChanged: (val) {
+                               setState(() => _selectedFolder = val);
+                           },
+                         ),
+                         const SizedBox(width: 12),
                          FilterChip(
                            label: const Text('Do Today'),
                            selected: _isToday,
@@ -188,54 +387,51 @@ class _TasksScreenState extends State<TasksScreen> {
                 final docs = snapshot.data!.docs;
                 final allTasks = docs.map((d) => Task.fromFirestore(d)).toList();
 
-                final activeTasks = allTasks.where((t) => !t.isCompleted).toList();
-                
-                // Sort active: Today first, then date
-                activeTasks.sort((a, b) {
-                    if (a.isToday && !b.isToday) return -1;
-                    if (!a.isToday && b.isToday) return 1;
-                    return b.createdAt.compareTo(a.createdAt);
-                });
-
-                final now = DateTime.now();
-                final weekAgo = now.subtract(const Duration(days: 7));
-                final completedTasks = allTasks.where((t) => 
-                  t.isCompleted && 
-                  (t.completedAt == null || t.completedAt!.isAfter(weekAgo))
-                ).toList()
-                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-                if (allTasks.isEmpty) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.task_alt, size: 64, color: Colors.grey),
-                        SizedBox(height: 16),
-                        Text('No tasks yet!', style: TextStyle(color: Colors.grey)),
-                      ],
-                    ),
-                  );
+                // Group tasks
+                final Map<String, List<Task>> grouped = {};
+                // Initialize groups
+                grouped[_defaultFolderName] = [];
+                for (var f in _folders) {
+                    grouped[f] = [];
                 }
+
+                for (var task in allTasks) {
+                    final folder = (task.folder == null || !_folders.contains(task.folder)) ? _defaultFolderName : task.folder!;
+                    if (grouped[folder] == null) grouped[folder] = []; // explicit null check mostly redundant due to init above but safe
+                     grouped[folder]!.add(task);
+                }
+
+                // Sorting helper
+                void sortTasks(List<Task> list) {
+                    final completed = list.where((t) => t.isCompleted).toList();
+                    final active = list.where((t) => !t.isCompleted).toList();
+                    
+                    active.sort((a, b) {
+                        if (a.isToday && !b.isToday) return -1;
+                        if (!a.isToday && b.isToday) return 1;
+                        return b.createdAt.compareTo(a.createdAt);
+                    });
+
+                    // Hide old completed tasks? The original code hid > 7 days.
+                    final now = DateTime.now();
+                    final weekAgo = now.subtract(const Duration(days: 7));
+                    completed.removeWhere((t) => t.completedAt != null && t.completedAt!.isBefore(weekAgo));
+                    completed.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+                    list.clear();
+                    list.addAll(active);
+                    list.addAll(completed);
+                }
+
+                grouped.forEach((_, list) => sortTasks(list));
 
                 return ListView(
                   padding: const EdgeInsets.only(bottom: 80),
                   children: [
-                    if (activeTasks.isNotEmpty) ...[
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                        child: Text('Active Tasks', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-                      ),
-                      ...activeTasks.map((task) => _buildTaskTile(task, isActive: true)),
-                    ],
-                    
-                    if (completedTasks.isNotEmpty) ...[
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
-                        child: Text('Completed (Last 7 Days)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-                      ),
-                      ...completedTasks.map((task) => _buildTaskTile(task, isActive: false)),
-                    ],
+                      // Inbox First
+                      _buildFolderGroup(_defaultFolderName, grouped[_defaultFolderName]!),
+                      // Then user folders
+                      ..._folders.map((f) => _buildFolderGroup(f, grouped[f]!)),
                   ],
                 );
               },
@@ -246,9 +442,103 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  Widget _buildTaskTile(Task task, {required bool isActive}) {
+  Widget _buildFolderGroup(String folderName, List<Task> tasks) {
+      final isInbox = folderName == _defaultFolderName;
+      final count = tasks.where((t) => !t.isCompleted).length;
+      final countStr = count > 0 ? ' ($count)' : '';
+      
+      return ExpansionTile(
+          key: PageStorageKey(folderName),
+          initiallyExpanded: _folderExpansions[folderName] ?? false,
+          onExpansionChanged: (val) {
+              setState(() => _folderExpansions[folderName] = val);
+              // auto-select folder when expanded? No, might be annoying.
+              if (val && !isInbox && _selectedFolder != folderName) {
+                  // Optional: Select this folder for new tasks if user expands it
+                  setState(() => _selectedFolder = folderName);
+              } else if (val && isInbox) {
+                  setState(() => _selectedFolder = null);
+              }
+          },
+          title: Text(folderName + countStr, style: const TextStyle(fontWeight: FontWeight.bold)),
+          leading: Icon(isInbox ? Icons.inbox : Icons.folder_outlined, color: isInbox ? Colors.blue : Colors.grey[700]),
+          trailing: isInbox 
+            ? PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (val) async {
+                  if (val == 'rename') {
+                      final c = TextEditingController(text: folderName);
+                      final newName = await showDialog<String>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                              title: const Text('Rename Default Folder'),
+                              content: TextField(controller: c, autofocus: true, textCapitalization: TextCapitalization.sentences),
+                              actions: [
+                                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                                  TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Rename')),
+                              ],
+                          )
+                      );
+                      if (newName != null && newName.isNotEmpty && newName != folderName) {
+                          _renameFolder(folderName, newName);
+                      }
+                  }
+              },
+              itemBuilder: (ctx) => [
+                  const PopupMenuItem(value: 'rename', child: Text('Rename')),
+              ],
+            )
+            : PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (val) async {
+                  if (val == 'rename') {
+                      final c = TextEditingController(text: folderName);
+                      final newName = await showDialog<String>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                              title: const Text('Rename Folder'),
+                              content: TextField(controller: c, autofocus: true, textCapitalization: TextCapitalization.sentences),
+                              actions: [
+                                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                                  TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Rename')),
+                              ],
+                          )
+                      );
+                      if (newName != null && newName.isNotEmpty && newName != folderName) {
+                          _renameFolder(folderName, newName);
+                      }
+                  } else if (val == 'delete') {
+                      final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                              title: const Text('Delete Folder?'),
+                              content: const Text('Tasks in this folder will be moved to Inbox.'),
+                              actions: [
+                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                  TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+                              ],
+                          )
+                      );
+                      if (confirm == true) {
+                          _deleteFolder(folderName);
+                      }
+                  }
+              },
+              itemBuilder: (ctx) => [
+                  const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                  const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.red))),
+              ],
+          ),
+          children: tasks.isEmpty 
+            ? [const ListTile(title: Text('No tasks', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)))]
+            : tasks.map((t) => _buildTaskTile(t)).toList(),
+      );
+  }
+
+  Widget _buildTaskTile(Task task) {
     final hours = task.estimatedMinutes / 60;
     final timeLabel = hours == hours.toInt() ? '${hours.toInt()}h' : '${hours.toStringAsFixed(1)}h';
+    final isActive = !task.isCompleted;
 
     return Dismissible(
         key: Key(task.id),
@@ -297,6 +587,9 @@ class _TasksScreenState extends State<TasksScreen> {
                 Icon(Icons.timer_outlined, size: 14, color: Colors.grey[600]),
                 const SizedBox(width: 4),
                 Text(timeLabel, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                if (task.folder != null && _selectedFolder == null) ...[ // Should we show folder label? Maybe not needed if grouped?
+                   // No, redundancy.
+                ]
             ],
             ),
             trailing: isActive ? IconButton(
@@ -307,8 +600,45 @@ class _TasksScreenState extends State<TasksScreen> {
                 onPressed: () => _toggleToday(task),
                 tooltip: task.isToday ? 'Planned for Today' : 'Add to Today',
             ) : null,
+            onLongPress: () {
+                // Optional: Move task to another folder via dialog
+                _showMoveTaskDialog(task);
+            },
         ),
         ),
     );
+  }
+
+  Future<void> _showMoveTaskDialog(Task task) async {
+      await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+              title: const Text('Move Task'),
+              content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                      ListTile(
+                          title: Text(_defaultFolderName),
+                          onTap: () { Navigator.pop(ctx); _moveTask(task, null); },
+                          selected: task.folder == null,
+                      ),
+                      ..._folders.map((f) => ListTile(
+                          title: Text(f),
+                          onTap: () { Navigator.pop(ctx); _moveTask(task, f); },
+                          selected: task.folder == f,
+                      )),
+                  ],
+              ),
+          )
+      );
+  }
+
+  Future<void> _moveTask(Task task, String? folder) async {
+      if (task.folder == folder) return;
+      try {
+          await getFirestore().collection('tasks').doc(task.id).update({'folder': folder});
+      } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error moving task: $e')));
+      }
   }
 }

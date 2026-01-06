@@ -6,12 +6,16 @@ class UserSettings {
   final TimeOfDay sleepTime;
   final TimeOfDay wakeTime;
   final List<String> customActivities;
+  final List<String> taskFolders;
+  final String defaultFolderName;
 
   UserSettings({
     required this.userId,
     required this.sleepTime,
     required this.wakeTime,
     this.customActivities = const [],
+    this.taskFolders = const [],
+    this.defaultFolderName = 'Inbox',
   });
 
   Map<String, dynamic> toMap() {
@@ -20,15 +24,17 @@ class UserSettings {
       'sleepTime': '${sleepTime.hour.toString().padLeft(2, '0')}:${sleepTime.minute.toString().padLeft(2, '0')}',
       'wakeTime': '${wakeTime.hour.toString().padLeft(2, '0')}:${wakeTime.minute.toString().padLeft(2, '0')}',
       'customActivities': customActivities,
+      'taskFolders': taskFolders,
+      'defaultFolderName': defaultFolderName,
     };
   }
 
   factory UserSettings.fromMap(Map<String, dynamic> map) {
-    final sleepTimeParts = (map['sleepTime'] as String).split(':');
-    final wakeTimeParts = (map['wakeTime'] as String).split(':');
+    final sleepTimeParts = (map['sleepTime'] as String? ?? '23:00').split(':');
+    final wakeTimeParts = (map['wakeTime'] as String? ?? '07:00').split(':');
 
     return UserSettings(
-      userId: map['userId'] as String,
+      userId: map['userId'] as String? ?? '',
       sleepTime: TimeOfDay(
         hour: int.parse(sleepTimeParts[0]),
         minute: int.parse(sleepTimeParts[1]),
@@ -38,6 +44,8 @@ class UserSettings {
         minute: int.parse(wakeTimeParts[1]),
       ),
       customActivities: List<String>.from(map['customActivities'] ?? []),
+      taskFolders: List<String>.from(map['taskFolders'] ?? []),
+      defaultFolderName: map['defaultFolderName'] ?? 'Inbox',
     );
   }
 
@@ -45,12 +53,16 @@ class UserSettings {
     TimeOfDay? sleepTime,
     TimeOfDay? wakeTime,
     List<String>? customActivities,
+    List<String>? taskFolders,
+    String? defaultFolderName,
   }) {
     return UserSettings(
       userId: userId,
       sleepTime: sleepTime ?? this.sleepTime,
       wakeTime: wakeTime ?? this.wakeTime,
       customActivities: customActivities ?? this.customActivities,
+      taskFolders: taskFolders ?? this.taskFolders,
+      defaultFolderName: defaultFolderName ?? this.defaultFolderName,
     );
   }
 } 

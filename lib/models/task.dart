@@ -9,6 +9,7 @@ class Task {
   final int estimatedMinutes; // 30, 60, 90, etc.
   final DateTime createdAt;
   final DateTime? completedAt;
+  final String? folder;
 
   Task({
     required this.id,
@@ -19,6 +20,7 @@ class Task {
     this.estimatedMinutes = 30,
     required this.createdAt,
     this.completedAt,
+    this.folder,
   });
 
   Map<String, dynamic> toMap() {
@@ -31,6 +33,7 @@ class Task {
       'estimatedMinutes': estimatedMinutes,
       'createdAt': Timestamp.fromDate(createdAt),
       'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
+      'folder': folder,
     };
   }
 
@@ -45,6 +48,7 @@ class Task {
       estimatedMinutes: data['estimatedMinutes'] ?? 30,
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
+      folder: data['folder'] as String?,
     );
   }
 
@@ -54,6 +58,7 @@ class Task {
     bool? isToday,
     int? estimatedMinutes,
     DateTime? completedAt,
+    String? folder,
   }) {
     return Task(
       id: id,
@@ -64,6 +69,7 @@ class Task {
       estimatedMinutes: estimatedMinutes ?? this.estimatedMinutes,
       createdAt: createdAt,
       completedAt: completedAt ?? this.completedAt,
+      folder: folder ?? this.folder,
     );
   }
 }
