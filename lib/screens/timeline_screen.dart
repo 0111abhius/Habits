@@ -425,13 +425,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
               ],
             ),
           ),
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: TimelineViewHeaderDelegate(
-              currentMode: _viewMode,
-              onModeChanged: (mode) => _viewModeNotifier.value = mode,
-            ),
-          ),
+                ValueListenableBuilder<TimelineViewMode>(
+                  valueListenable: _viewModeNotifier,
+                  builder: (context, mode, _) {
+                    return SliverPersistentHeader(
+                      pinned: true,
+                      delegate: TimelineViewHeaderDelegate(
+                        currentMode: mode,
+                        onModeChanged: (newMode) => _viewModeNotifier.value = newMode,
+                      ),
+                    );
+                  },
+                ),
           StreamBuilder<QuerySnapshot>(
             key: ValueKey(_currentDateKey),
             stream: _currentStream,
