@@ -302,16 +302,64 @@ class _TimelineScreenState extends State<TimelineScreen> {
     await entriesColl.doc(newEntry.id).set(newEntry.toMap(), SetOptions(merge: true));
   }
 
+  String _getDateTitle(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final input = DateTime(date.year, date.month, date.day);
+
+    if (input == today) return 'Today';
+    
+    final yesterday = today.subtract(const Duration(days: 1));
+    if (input == yesterday) return 'Yesterday';
+    
+    final tomorrow = today.add(const Duration(days: 1));
+    if (input == tomorrow) return 'Tomorrow';
+    
+    return DateFormat('EEE, MMM d').format(date);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: CustomScrollView(
+      body: GestureDetector(
+        onHorizontalDragEnd: (details) {
+          if (details.primaryVelocity == null) return;
+          const double sensitivity = 300.0;
+          
+          if (details.primaryVelocity! < -sensitivity) {
+            // Swipe Left -> Next Day
+            final nextDay = selectedDate.add(const Duration(days: 1));
+            setState(() {
+              _blockKeys.clear();
+              selectedDate = nextDay;
+              _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+              _initStream();
+              _loadDayComplete();
+            });
+            // Reset scroll/cache
+            _pendingScrollOffset = null;
+            WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
+          } else if (details.primaryVelocity! > sensitivity) {
+            // Swipe Right -> Previous Day
+             final prevDay = selectedDate.subtract(const Duration(days: 1));
+             setState(() {
+              _blockKeys.clear();
+              selectedDate = prevDay;
+              _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+              _initStream();
+              _loadDayComplete();
+            });
+            // Reset scroll/cache
+            _pendingScrollOffset = null;
+            WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
+          }
+        },
+        child: CustomScrollView(
         controller: _scrollController,
         slivers: [
           SliverAppBar(
-            title: const Text('Timeline'),
-            floating: true,
-            snap: true,
+            pinned: true,
+            title: Text(_getDateTitle(selectedDate), style: const TextStyle(fontWeight: FontWeight.bold)),
             actions: [
               ValueListenableBuilder<bool>(
                 valueListenable: _dayCompleteNotifier,
@@ -339,6 +387,19 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   ),
                 ),
               ),
+              IconButton(
+                icon: const Icon(Icons.access_time),
+                tooltip: 'Jump to Now',
+                onPressed: _scrollToNow,
+              ),
+              IconButton(
+                icon: const Icon(Icons.copy_all),
+                tooltip: 'Use Template',
+                onPressed: () async {
+                  await Navigator.pushNamed(context, '/template');
+                  if (mounted) setState(() {});
+                },
+              ),
 
               PopupMenuButton<String>(
                 tooltip: 'Customize',
@@ -346,10 +407,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   switch (value) {
                     case 'sleep':
                       _showSleepDialog(context);
-                      break;
-                    case 'template':
-                      await Navigator.pushNamed(context, '/template');
-                      if (mounted) setState(() {});
                       break;
                     case 'signout':
                       await FirebaseAuth.instance.signOut();
@@ -369,13 +426,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     child: ListTile(
                       leading: const Icon(Icons.bedtime),
                       title: const Text('Sleep timings'),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'template',
-                    child: ListTile(
-                      leading: const Icon(Icons.content_copy),
-                      title: const Text('Template'),
                     ),
                   ),
                   PopupMenuItem(
@@ -436,7 +486,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
                       delegate: TimelineViewHeaderDelegate(
                         currentMode: mode,
                         onModeChanged: (newMode) => _viewModeNotifier.value = newMode,
-                        onJumpToNow: _scrollToNow,
                       ),
                     );
                   },
@@ -448,6 +497,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
         ],
+      ),
       ),
     );
   }
