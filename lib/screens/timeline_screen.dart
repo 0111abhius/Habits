@@ -14,6 +14,8 @@ import 'activities_management_screen.dart';
 import 'login_screen.dart';
 import '../widgets/timeline_hour_tile.dart';
 import 'day_planning_assistant.dart';
+import '../models/timeline_view_mode.dart';
+import '../widgets/timeline_view_header.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -47,10 +49,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
   List<TimelineEntry> _cachedEntries = [];
 
   final ValueNotifier<bool> _habitsExpandedNotifier = ValueNotifier(true);
-  final ValueNotifier<bool> _showRetroNotifier = ValueNotifier(false);
+  final ValueNotifier<TimelineViewMode> _viewModeNotifier = ValueNotifier(TimelineViewMode.plan);
 
   bool get _habitsExpanded => _habitsExpandedNotifier.value;
-  bool get _showRetro => _showRetroNotifier.value;
+  TimelineViewMode get _viewMode => _viewModeNotifier.value;
 
   // Using a ValueNotifier means toggling the "Day fully logged" checkbox
   // only rebuilds that specific part of the UI instead of the whole timeline.
@@ -312,11 +314,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
             snap: true,
             actions: [
               ValueListenableBuilder<bool>(
-                valueListenable: _showRetroNotifier,
-                builder: (context, showRetro, _) => IconButton(
-                  icon: Icon(showRetro ? Icons.visibility : Icons.visibility_off),
-                  tooltip: showRetro ? 'Hide Retro' : 'Show Retro',
-                  onPressed: () => _showRetroNotifier.value = !showRetro,
+                valueListenable: _dayCompleteNotifier,
+                builder: (context, done, _) => IconButton(
+                  icon: Icon(
+                    done ? Icons.check_circle : Icons.check_circle_outline,
+                    color: done ? Colors.green : null,
+                  ),
+                  tooltip: done ? 'Day Logged' : 'Mark Day as Logged',
+                  onPressed: () => _setDayComplete(!done),
                 ),
               ),
               IconButton(
@@ -406,17 +411,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   completedDates: _loggedDates,
                 ),
                 ValueListenableBuilder<bool>(
-                  valueListenable: _dayCompleteNotifier,
-                  builder: (context, done, _) => CheckboxListTile(
-                    key: ValueKey(done),
-                    title: const Text('Day fully logged'),
-                    value: done,
-                    onChanged: (val) {
-                      if (val != null) _setDayComplete(val);
-                    },
-                  ),
-                ),
-                ValueListenableBuilder<bool>(
                   valueListenable: _habitsExpandedNotifier,
                   builder: (context, expanded, _) => ExpansionTile(
                     title: const Text('Habits'),
@@ -429,6 +423,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: TimelineViewHeaderDelegate(
+              currentMode: _viewMode,
+              onModeChanged: (mode) => _viewModeNotifier.value = mode,
             ),
           ),
           StreamBuilder<QuerySnapshot>(
@@ -547,16 +548,16 @@ class _TimelineScreenState extends State<TimelineScreen> {
               ? _blockKeys.putIfAbsent(_noteKey(hour, 30), () => GlobalKey())
               : null;
 
-          final tile = ValueListenableBuilder<bool>(
-            valueListenable: _showRetroNotifier,
-            builder: (context, showRetro, _) {
+          final tile = ValueListenableBuilder<TimelineViewMode>(
+            valueListenable: _viewModeNotifier,
+            builder: (context, viewMode, _) {
               return TimelineHourTile(
                 key: ValueKey(hour),
                 hour: hour,
                 entry00: entry00,
                 entry30: entry30,
                 isSplit: _splitHours.contains(hour),
-                showRetro: showRetro,
+                viewMode: viewMode,
                 onToggleSplit: () => _toggleSplit(hour),
                 onUpdateEntry: _updateEntry,
                 availableActivities: _flattenCats(),
@@ -603,34 +604,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  Future<String?> _promptCustomActivity(BuildContext context) async {
-    String? custom;
-    await showDialog(
-      context: context,
-      builder: (ctx) {
-        final c = TextEditingController();
-        return AlertDialog(
-          title: const Text('New Activity'),
-          content: TextField(
-            controller: c,
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'Activity Name'),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            TextButton(
-              onPressed: () {
-                custom = c.text.trim();
-                Navigator.pop(ctx);
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
-    );
-    return custom;
-  }
+
 
   Future<void> _updateEntry(TimelineEntry entry, String activity, String notes, {bool isPlan=false}) async {
     try {
@@ -793,11 +767,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
           // ensure Activities list refreshes in timeline & dropdown
           _activities = List<String>.from(_activities);
         });
-
-        if (timesChanged) {
-          // after rebuild, scroll
-          WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
-        }
       }
 
       if (timesChanged) {
@@ -1123,7 +1092,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     return flatSet.toList();
   }
 
-  Future<String?> _promptCustomactivity() async {
+  Future<String?> _promptCustomActivity(BuildContext context) async {
     final TextEditingController ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
@@ -1169,4 +1138,4 @@ class _TimelineScreenState extends State<TimelineScreen> {
     _loggedDates = snap.docs.map((d)=>d.id).toSet();
     if(mounted) setState((){});
   }
-} 
+}

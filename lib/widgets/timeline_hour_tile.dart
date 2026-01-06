@@ -4,13 +4,14 @@ import 'dart:async';
 import '../models/timeline_entry.dart';
 import '../utils/activities.dart';
 import 'activity_picker.dart';
+import '../models/timeline_view_mode.dart';
 
 class TimelineHourTile extends StatefulWidget {
   final int hour;
   final TimelineEntry entry00;
   final TimelineEntry? entry30;
   final bool isSplit;
-  final bool showRetro;
+  final TimelineViewMode viewMode;
   final VoidCallback onToggleSplit;
   final Future<void> Function(TimelineEntry entry, String activity, String notes, {bool isPlan}) onUpdateEntry;
   // We pass these down to reuse the picker logic
@@ -28,7 +29,7 @@ class TimelineHourTile extends StatefulWidget {
     required this.entry00,
     this.entry30,
     required this.isSplit,
-    required this.showRetro,
+    required this.viewMode,
     required this.onToggleSplit,
     required this.onUpdateEntry,
     required this.availableActivities,
@@ -134,12 +135,6 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
             Icon(Icons.arrow_forward, size: 14, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 4),
             Text('Copy', style: Theme.of(context).textTheme.bodySmall), 
-            // "a -> and copy".  Maybe "Plan -> Copy"? 
-            // Let's stick to user request: "Plan and retro with a -> and copy"
-            // "exactly between Plan and retro with a -> and copy"
-            // Maybe: "Plan -> Copy"? Or just "-> Copy"? 
-            // User: "between Plan and retro with a -> and copy"
-            // I'll do: "Plan -> Copy" logic. 
           ],
         ),
       ),
@@ -175,7 +170,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
                          style: Theme.of(context).textTheme.titleSmall
                        ),
                      ),
-                     if (widget.showRetro) ...[
+                     if (widget.viewMode == TimelineViewMode.compare) ...[
                         // Centered Copy Button
                         _buildCopyButton(widget.entry00),
                         const Expanded(child: SizedBox()), 
@@ -230,57 +225,55 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     final retroCtrl = _retroControllers[minute]!;
 
     // Plan Column
-    Widget planColumn = Expanded(
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3),
-          borderRadius: widget.showRetro
-              ? const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12))
-              : BorderRadius.circular(12),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
-        ),
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            OutlinedButton(
-              onPressed: () async {
-                final picked = await showActivityPicker(
-                  context: context,
-                  allActivities: available,
-                  recent: widget.recentActivities,
-                );
-                if (picked == null) return;
-                if (picked == '__custom') {
-                  final custom = await widget.onPromptCustomActivity();
-                  if (custom != null && custom.isNotEmpty) {
-                    widget.onUpdateRecentActivity(custom);
-                    widget.onUpdateEntry(entry, custom, entry.planNotes, isPlan: true);
-                  }
-                } else {
-                  widget.onUpdateRecentActivity(picked);
-                  widget.onUpdateEntry(entry, picked, entry.planNotes, isPlan: true);
+    Widget planColumn = Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3),
+        borderRadius: widget.viewMode == TimelineViewMode.compare
+            ? const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12))
+            : BorderRadius.circular(12),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+      ),
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          OutlinedButton(
+            onPressed: () async {
+              final picked = await showActivityPicker(
+                context: context,
+                allActivities: available,
+                recent: widget.recentActivities,
+              );
+              if (picked == null) return;
+              if (picked == '__custom') {
+                final custom = await widget.onPromptCustomActivity();
+                if (custom != null && custom.isNotEmpty) {
+                  widget.onUpdateRecentActivity(custom);
+                  widget.onUpdateEntry(entry, custom, entry.planNotes, isPlan: true);
                 }
-              },
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  entry.planactivity.isEmpty ? 'Plan' : _displayLabel(entry.planactivity),
-                  overflow: TextOverflow.ellipsis,
-                ),
+              } else {
+                widget.onUpdateRecentActivity(picked);
+                widget.onUpdateEntry(entry, picked, entry.planNotes, isPlan: true);
+              }
+            },
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                entry.planactivity.isEmpty ? 'Plan' : _displayLabel(entry.planactivity),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            TextField(
-              controller: planCtrl,
-              maxLines: null,
-              decoration: const InputDecoration(hintText: 'Notes', border: InputBorder.none),
-              onChanged: (val) => _onNoteChanged(minute, val, entry, true),
-            ),
-          ],
-        ),
+          ),
+          TextField(
+            controller: planCtrl,
+            maxLines: null,
+            decoration: const InputDecoration(hintText: 'Notes', border: InputBorder.none),
+            onChanged: (val) => _onNoteChanged(minute, val, entry, true),
+          ),
+        ],
       ),
     );
 
@@ -288,7 +281,9 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     Widget retroColumn = Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.1),
-        borderRadius: const BorderRadius.only(topRight: Radius.circular(12), bottomRight: Radius.circular(12)),
+        borderRadius: widget.viewMode == TimelineViewMode.compare
+          ? const BorderRadius.only(topRight: Radius.circular(12), bottomRight: Radius.circular(12))
+          : BorderRadius.circular(12),
         border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
       ),
       padding: const EdgeInsets.all(8),
@@ -336,18 +331,23 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     );
 
     // Combine
-    // Remove stack, just use row
     Widget innerRow;
-    if (!widget.showRetro) {
-      innerRow = Row(children: [planColumn]);
-    } else {
-      innerRow = Row(
-        children: [
-          planColumn,
-          const SizedBox(width: 4),
-          Expanded(child: retroColumn),
-        ],
-      );
+    switch (widget.viewMode) {
+      case TimelineViewMode.plan:
+        innerRow = Row(children: [Expanded(child: planColumn)]); // Expanded ensures full width
+        break;
+      case TimelineViewMode.actual:
+        innerRow = Row(children: [Expanded(child: retroColumn)]);
+        break;
+      case TimelineViewMode.compare:
+        innerRow = Row(
+          children: [
+            Expanded(child: planColumn),
+            const SizedBox(width: 4),
+            Expanded(child: retroColumn),
+          ],
+        );
+        break;
     }
 
     if (minute == 0) return innerRow;
@@ -367,11 +367,11 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
           child: Row(
             children: [
               Text(label, style: labelStyle),
-              if (widget.showRetro) ...[
+              if (widget.viewMode == TimelineViewMode.compare) ...[
                  const Expanded(child: SizedBox()),
                  _buildCopyButton(entry),
                  const Expanded(child: SizedBox()),
-                 // Balance visual weight of trailing icon in main header (48px) to try align center
+                 // Balance visual weight
                  const SizedBox(width: 48), 
               ] else 
                  const Spacer(),
