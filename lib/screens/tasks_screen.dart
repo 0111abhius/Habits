@@ -918,7 +918,97 @@ class _TasksScreenState extends State<TasksScreen> {
         onDelete: () => _deleteTask(task.id),
         onEdit: () => _showTaskBottomSheet(taskToEdit: task),
         onToggleToday: (_) => _toggleToday(task),
+        onSchedule: () => _showScheduleDialog(task),
     );
+  }
+
+  Future<void> _showScheduleDialog(Task task) async {
+      final now = DateTime.now();
+      // Default to tomorrow 9am if not scheduled, or current scheduled date
+      final initialDate = task.scheduledDate ?? now.add(const Duration(days: 1));
+      
+      final pickedDate = await showDatePicker(
+          context: context, 
+          initialDate: initialDate, 
+          firstDate: now.subtract(const Duration(days: 365)), 
+          lastDate: now.add(const Duration(days: 365)),
+      );
+      
+      if (pickedDate != null && mounted) {
+          final pickedTime = await showTimePicker(
+              context: context, 
+              initialTime: const TimeOfDay(hour: 9, minute: 0),
+          );
+          
+          if (pickedTime != null) {
+              final start = DateTime(
+                  pickedDate.year, 
+                  pickedDate.month, 
+                  pickedDate.day, 
+                  pickedTime.hour, 
+                  pickedTime.minute
+              );
+              await _scheduleTaskToTimeline(task, start);
+          }
+      }
+  }
+
+  Future<void> _scheduleTaskToTimeline(Task task, DateTime start) async {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      
+      final batch = getFirestore().batch();
+      final entriesRef = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
+
+      int duration = task.estimatedMinutes > 0 ? task.estimatedMinutes : 60;
+      int remaining = duration;
+      DateTime currentStart = start;
+      
+      // Logic to split across hour blocks if needed, similar to AI schedule
+      // or just one block if it fits. 
+      // Simplified: Just loop until duration covered.
+      
+      while (remaining > 0) {
+          int chunk = remaining;
+          // If crossing hour boundary? 
+          // Simple approach: Just write one entry per hour block ensuring we fill slots?
+          // Let's stick to the AI logic: roughly 60 mins max per entry if we want to follow 'hour' structure,
+          // but strictly speaking, we can write any start/end. 
+          // Using 60 min chunks is safer for the existing visualization if it relies on hour slots.
+          if (chunk > 60) chunk = 60;
+          
+          final end = currentStart.add(Duration(minutes: chunk));
+          final docId = DateFormat('yyyyMMdd_HHmm').format(currentStart);
+          
+          batch.set(entriesRef.doc(docId), {
+             'userId': uid,
+             'date': DateFormat('yyyy-MM-dd').format(currentStart),
+             'hour': currentStart.hour,
+             'startTime': Timestamp.fromDate(currentStart),
+             'endTime': Timestamp.fromDate(end),
+             'planactivity': task.title,
+             'planNotes': 'Scheduled from Tasks',
+          }, SetOptions(merge: true));
+          
+          currentStart = end;
+          remaining -= chunk;
+      }
+      
+      try {
+          // Update Task as well
+          final isToday = start.year == DateTime.now().year && start.month == DateTime.now().month && start.day == DateTime.now().day;
+          batch.update(getFirestore().collection('tasks').doc(task.id), {
+              'scheduledDate': Timestamp.fromDate(start),
+              'isToday': isToday,
+          });
+          
+          await batch.commit();
+          if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Task scheduled on Timeline')));
+          }
+      } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error scheduling: $e')));
+      }
   }
 
 

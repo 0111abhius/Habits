@@ -9,6 +9,8 @@ class TaskTile extends StatelessWidget {
   final VoidCallback onEdit;
   final Function(bool) onToggleToday;
 
+  final VoidCallback? onSchedule;
+
   const TaskTile({
     super.key,
     required this.task,
@@ -16,6 +18,7 @@ class TaskTile extends StatelessWidget {
     required this.onDelete,
     required this.onEdit,
     required this.onToggleToday,
+    this.onSchedule,
   });
 
   @override
@@ -85,6 +88,7 @@ class TaskTile extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onEdit,
+          onLongPress: onSchedule, // Long press to schedule
           child: Padding(
             padding: const EdgeInsets.all(12.0),
             child: Row(
@@ -156,20 +160,16 @@ class TaskTile extends StatelessWidget {
                   ),
                 ),
                 
-                // Actions
-                Column(
-                  children: [
-                     IconButton(
-                       icon: Icon(
-                         task.isToday ? Icons.wb_sunny : Icons.wb_sunny_outlined,
-                         color: task.isToday ? Colors.orange : theme.disabledColor,
-                         size: 20,
-                       ),
-                       onPressed: () => onToggleToday(!task.isToday),
-                       tooltip: task.isToday ? 'Planned for Today' : 'Do Today',
-                     ),
-                  ],
-                ),
+                // Actions (Just Today Toggle)
+                 IconButton(
+                   icon: Icon(
+                     task.isToday ? Icons.wb_sunny : Icons.wb_sunny_outlined,
+                     color: task.isToday ? Colors.orange : theme.disabledColor,
+                     size: 20,
+                   ),
+                   onPressed: () => onToggleToday(!task.isToday),
+                   tooltip: task.isToday ? 'Planned for Today' : 'Do Today',
+                 ),
               ],
             ),
           ),
