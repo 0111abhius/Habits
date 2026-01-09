@@ -203,4 +203,53 @@ Structure:
       return '{"error": "$e"}';
     }
   }
+  /// Schedules tasks based on history and available time.
+  Future<String> scheduleTasks({
+    required List<String> tasks, // "Task Name (30m)"
+    required String historyLogs,
+    required DateTime targetDate,
+    required String currentPlan, // existing commitments for that day
+  }) async {
+    final prompt = '''
+You are an expert scheduler.
+I need you to schedule the following tasks for ${targetDate.toLocal().toString().split(' ')[0]}.
+I will provide my past 7 days of activity history so you can understand my patterns (when I usually work, exercise, relax, etc.).
+I will also provide any existing commitments for the target date.
+
+TASKS TO SCHEDULE:
+${tasks.map((t) => "- $t").join('\n')}
+
+PAST 7 DAYS HISTORY:
+$historyLogs
+
+EXISTING PLAN FOR TARGET DATE:
+$currentPlan
+
+INSTRUCTIONS:
+1. suggest a specific start time for each task.
+2. Respect my historical patterns (e.g. if I usually exercise at 6pm, don't schedule deep work then).
+3. Do not overlap with existing commitments in the plan.
+4. Return strict JSON.
+
+JSON FORMAT:
+{
+  "schedule": {
+    "HH:mm": "Task Name"
+  },
+  "reasoning": "Explanation of why you chose these times based on my history..."
+}
+"schedule" keys must be "HH:mm" 24-hour format.
+Only include the tasks I asked you to schedule. Do not add arbitrary new activities unless necessary for context (like "Break").
+''';
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await _model.generateContent(content);
+      var text = response.text ?? '{}';
+      text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+      return text;
+    } catch (e) {
+      return '{"error": "$e"}';
+    }
+  }
 }

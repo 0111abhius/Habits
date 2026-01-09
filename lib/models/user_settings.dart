@@ -8,6 +8,7 @@ class UserSettings {
   final List<String> customActivities;
   final List<String> taskFolders;
   final String defaultFolderName;
+  final Map<String, String> folderActivities;
 
   UserSettings({
     required this.userId,
@@ -16,6 +17,7 @@ class UserSettings {
     this.customActivities = const [],
     this.taskFolders = const [],
     this.defaultFolderName = 'Inbox',
+    this.folderActivities = const {},
   });
 
   Map<String, dynamic> toMap() {
@@ -26,6 +28,7 @@ class UserSettings {
       'customActivities': customActivities,
       'taskFolders': taskFolders,
       'defaultFolderName': defaultFolderName,
+      'folderActivities': folderActivities,
     };
   }
 
@@ -46,6 +49,7 @@ class UserSettings {
       customActivities: List<String>.from(map['customActivities'] ?? []),
       taskFolders: List<String>.from(map['taskFolders'] ?? []),
       defaultFolderName: map['defaultFolderName'] ?? 'Inbox',
+      folderActivities: Map<String, String>.from(map['folderActivities'] ?? {}),
     );
   }
 
@@ -55,6 +59,7 @@ class UserSettings {
     List<String>? customActivities,
     List<String>? taskFolders,
     String? defaultFolderName,
+    Map<String, String>? folderActivities,
   }) {
     return UserSettings(
       userId: userId,
@@ -63,6 +68,7 @@ class UserSettings {
       customActivities: customActivities ?? this.customActivities,
       taskFolders: taskFolders ?? this.taskFolders,
       defaultFolderName: defaultFolderName ?? this.defaultFolderName,
+      folderActivities: folderActivities ?? this.folderActivities,
     );
   }
 } 

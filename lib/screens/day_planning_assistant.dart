@@ -83,8 +83,8 @@ class DayPlanningAssistant {
         // Use shared robust detection
         data['newActivities'] = AIService.detectNewActivities(data, activities);
 
-        AIPlanReviewDialog.show(context, data, (schedule, newActivities) {
-             _applyPlan(context, date, schedule, newActivities);
+        AIPlanReviewDialog.show(context, data, (schedule, newActivities) async {
+             await _applyPlan(context, date, schedule, newActivities);
         });
 
       } catch (e) {

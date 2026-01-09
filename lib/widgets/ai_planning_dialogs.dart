@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:intl/intl.dart';
 import '../utils/ai_service.dart';
 
 class AIGoalDialog extends StatelessWidget {
@@ -57,18 +58,20 @@ class AIGoalDialog extends StatelessWidget {
 
 class AIPlanReviewDialog extends StatefulWidget {
   final Map<String, dynamic> data;
-  final Function(Map<String, String> schedule, List<String> newActivities) onApply;
+  final Future<void> Function(Map<String, String> schedule, List<String> newActivities) onApply;
+  final Map<String, String>? taskActivities;
 
   const AIPlanReviewDialog({
     super.key,
     required this.data,
     required this.onApply,
+    this.taskActivities,
   });
 
-  static Future<void> show(BuildContext context, Map<String, dynamic> data, Function(Map<String, String>, List<String>) onApply) {
+  static Future<void> show(BuildContext context, Map<String, dynamic> data, Future<void> Function(Map<String, String>, List<String>) onApply, {Map<String, String>? taskActivities}) {
     return showDialog(
       context: context,
-      builder: (ctx) => AIPlanReviewDialog(data: data, onApply: onApply),
+      builder: (ctx) => AIPlanReviewDialog(data: data, onApply: onApply, taskActivities: taskActivities),
     );
   }
 
@@ -76,8 +79,22 @@ class AIPlanReviewDialog extends StatefulWidget {
   State<AIPlanReviewDialog> createState() => _AIPlanReviewDialogState();
 }
 
+class _ScheduleItem {
+  TextEditingController timeCtrl;
+  TextEditingController activityCtrl;
+  _ScheduleItem(String time, String activity) 
+    : timeCtrl = TextEditingController(text: time),
+      activityCtrl = TextEditingController(text: activity);
+  
+  void dispose() {
+    timeCtrl.dispose();
+    activityCtrl.dispose();
+  }
+}
+
 class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
-  late Map<String, String> schedule;
+  // late Map<String, String> schedule; // Replaced by _items
+  late List<_ScheduleItem> _items;
   late List<String> newActs;
   late String reasoning;
   late Set<String> selectedNewActs;
@@ -85,10 +102,33 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
   @override
   void initState() {
     super.initState();
-    schedule = Map<String, String>.from(widget.data['schedule'] ?? {});
+    final initialSchedule = Map<String, String>.from(widget.data['schedule'] ?? {});
+    _items = initialSchedule.entries.map((e) => _ScheduleItem(e.key, e.value)).toList();
+    
     newActs = List<String>.from(widget.data['newActivities'] ?? []);
     reasoning = widget.data['reasoning'] ?? '';
     selectedNewActs = Set.from(newActs);
+  }
+
+  @override
+  void dispose() {
+    for (var i in _items) {
+      i.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addItem() {
+    setState(() {
+      _items.add(_ScheduleItem("", ""));
+    });
+  }
+
+  void _removeItem(int index) {
+    setState(() {
+      _items[index].dispose();
+      _items.removeAt(index);
+    });
   }
 
   @override
@@ -97,7 +137,7 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
       title: const Text('AI Review'),
       content: SizedBox(
         width: double.maxFinite,
-        height: 400,
+        height: 500, // Increased height
         child: DefaultTabController(
           length: 2,
           child: Column(
@@ -110,29 +150,99 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
                 child: TabBarView(
                   children: [
                     // Schedule Tab
-                    SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (reasoning.isNotEmpty) ...[
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: MarkdownBody(
-                                data: 'Note: $reasoning',
-                                styleSheet: MarkdownStyleSheet(
-                                  p: const TextStyle(fontStyle: FontStyle.italic),
+                    Column(
+                      children: [
+                        if (reasoning.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: SizedBox(
+                              height: 60,
+                              child: SingleChildScrollView(
+                                child: MarkdownBody(
+                                  data: 'Note: $reasoning',
+                                  styleSheet: MarkdownStyleSheet(
+                                    p: const TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
+                                  ),
                                 ),
                               ),
                             ),
-                            const Divider(),
-                          ],
-                          ...schedule.entries.map((e) => ListTile(
-                            dense: true,
-                            title: Text(e.key),
-                            subtitle: Text(e.value),
-                          )),
+                          ),
+                          const Divider(),
                         ],
-                      ),
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: _items.length + 1, // +1 for Add Button
+                            itemBuilder: (ctx, i) {
+                              if (i == _items.length) {
+                                return TextButton.icon(
+                                  onPressed: _addItem, 
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add Slot'),
+                                );
+                              }
+                              
+                              final item = _items[i];
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                child: Row(
+                                  children: [
+                                    // Time
+                                    SizedBox(
+                                      width: 80,
+                                      child: TextField(
+                                        controller: item.timeCtrl,
+                                        decoration: const InputDecoration(
+                                          hintText: 'Time',
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.all(8),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Activity
+                                    Expanded(
+                                      child: TextField(
+                                        controller: item.activityCtrl,
+                                        decoration: InputDecoration(
+                                          hintText: 'Activity',
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.all(8),
+                                          border: const OutlineInputBorder(),
+                                          suffixIcon: Builder(
+                                            builder: (context) {
+                                              final val = item.activityCtrl.text;
+                                              if (widget.taskActivities != null && widget.taskActivities!.containsKey(val)) {
+                                                 return Padding(
+                                                   padding: const EdgeInsets.only(right: 8.0),
+                                                   child: Chip(
+                                                     label: Text(widget.taskActivities![val]!, style: const TextStyle(fontSize: 10)),
+                                                     visualDensity: VisualDensity.compact,
+                                                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                   ),
+                                                 );
+                                              }
+                                              return const SizedBox.shrink();
+                                            }
+                                          ),
+                                        ),
+                                        style: const TextStyle(fontSize: 13),
+                                        onChanged: (_) => setState(() {}),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close, color: Colors.grey, size: 20),
+                                      onPressed: () => _removeItem(i),
+                                      tooltip: 'Remove',
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                     // New Activities Tab
                     newActs.isEmpty
@@ -189,7 +299,7 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.send),
-                  onPressed: null, // Basic text field usage handled by onSubmitted for now, or users hit enter.
+                  onPressed: null, // Basic text field usage handled by onSubmitted for now
                   tooltip: 'Type and press Enter to refine',
                 ),
               ],
@@ -205,12 +315,31 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
             ),
             const SizedBox(width: 8),
             FilledButton(
-              onPressed: () {
-                Navigator.pop(context);
-                widget.onApply(schedule, selectedNewActs.toList());
-              },
-              child: const Text('Apply & Save'),
-            ),
+              onPressed: () async {
+                // Reconstruct Map
+                final Map<String, String> finalSchedule = {};
+                for (var item in _items) {
+                    if (item.timeCtrl.text.isNotEmpty && item.activityCtrl.text.isNotEmpty) {
+                        finalSchedule[item.timeCtrl.text] = item.activityCtrl.text;
+                    }
+                }
+                
+                // Show saving indicator
+            showDialog(
+                context: context, 
+                barrierDismissible: false,
+                builder: (ctx) => const Center(child: CircularProgressIndicator())
+            );
+
+            await widget.onApply(finalSchedule, selectedNewActs.toList());
+            
+            if (context.mounted) {
+              Navigator.pop(context); // Pop loading
+              Navigator.pop(context); // Pop Dialog
+            }
+          },
+          child: const Text('Apply Plan'),
+        ),
             const SizedBox(width: 16),
           ],
         ),
@@ -230,36 +359,22 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
 
     try {
       final aiService = AIService();
-      // Reconstruct JSON from current state
-      final currentJson = '{"schedule": ${schedule.toString()}, "newActivities": ${newActs.toString()}}';
-      
-      // We need existing activities list. 
-      // Since it's not passed extensively, we can pass it in constructor or just utilize 
-      // the known set from the previous state (newActs + schedule values).
-      // Ideally, the parent widget passed everything. 
-      // For now, let's just pass the activities we know of (from schedule + newActs).
-      final existing = {...schedule.values, ...newActs}.toList();
+      // Reconstruct schedule for context
+      final Map<String, String> currentSchedule = {};
+      for (var item in _items) {
+          if (item.timeCtrl.text.isNotEmpty) {
+              currentSchedule[item.timeCtrl.text] = item.activityCtrl.text;
+          }
+      }
+
+      final currentJson = '{"schedule": ${currentSchedule.toString()}, "newActivities": ${newActs.toString()}}';
+      final existing = {...currentSchedule.values, ...newActs}.toList();
 
       final jsonStr = await aiService.refinePlanJSON(
         currentJson: currentJson,
         userRequest: request,
         existingActivities: existing,
       );
-      
-      // Parse result
-      // We need to import dart:convert if we use jsonDecode, but our AIService returns specific format.
-      // But typically we need to create a map from the string.
-      // Let's assume we can parse the string roughly or use a simple regex/helper, 
-      // OR we update this file to import 'dart:convert'.
-      // I'll add the import in another step or assume it exists/add it now if I can.
-      
-      // ... Actually, I can't easily parse JSON without dart:convert.
-      // I'll update the file imports first in a separate step to be safe, or just do strictly string manipulation?
-      // No, JSON parsing is better. I'll need to trigger an import update.
-      // But wait, I can use a quick helper to "reload" this dialog with new data?
-      // The dialog state holds the data.
-      
-      // Let's defer strict parsing logic to a helper or just do `Navigator.pop` (loading) -> verify -> setState.
       
       Navigator.pop(context); // close loading
       
@@ -269,15 +384,16 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
       final newReasoning = data['reasoning'] ?? '';
 
       setState(() {
-        schedule = newSchedule;
+        // Dispose old items
+        for (var i in _items) { i.dispose(); }
+        // Create new items
+        _items = newSchedule.entries.map((e) => _ScheduleItem(e.key, e.value)).toList();
+        
         newActs = newNewActs;
         reasoning = newReasoning;
-        // Reset or merge selection? 
-        // Logic: if an activity was previously selected and still exists in new suggestions, keep it selected.
-        // If it's new, default to checked? Or unchecked? Let's default to checked as usual.
+        
         final Set<String> updatedSelection = {};
         for (final act in newNewActs) {
-             // If we already selected it, keep it. If it's brand new, select it (default).
              if (selectedNewActs.contains(act) || !existing.contains(act)) {
                updatedSelection.add(act);
              }
@@ -293,5 +409,265 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error refining: $e')));
       }
     }
+  }
+}
+
+class AIMultiDayReviewDialog extends StatefulWidget {
+  final Map<DateTime, Map<String, dynamic>> dailyResults;
+  final Future<void> Function(Map<DateTime, Map<String, String>> finalSchedules) onApply;
+  final Map<String, String>? taskActivities;
+
+  const AIMultiDayReviewDialog({
+    super.key,
+    required this.dailyResults,
+    required this.onApply,
+    this.taskActivities,
+  });
+
+  static Future<void> show(
+    BuildContext context, 
+    Map<DateTime, Map<String, dynamic>> dailyResults, 
+    Future<void> Function(Map<DateTime, Map<String, String>>) onApply,
+    {Map<String, String>? taskActivities}
+  ) {
+    return showDialog(
+      context: context,
+      builder: (ctx) => AIMultiDayReviewDialog(dailyResults: dailyResults, onApply: onApply, taskActivities: taskActivities),
+    );
+  }
+
+  @override
+  State<AIMultiDayReviewDialog> createState() => _AIMultiDayReviewDialogState();
+}
+// ... (State class logic for building UI unchanged) ...
+
+// But I need to update the build method's onPressed action.
+// Since replace_file_content replaces a chunk, I need to include the build method actions or target specifically.
+// I'll replace the class definition and the actions part.
+
+// Actually I can just target the class definition and confirm signature change.
+// And target the onPressed logic separately?
+// Let's do huge replacement of the class to be safe and clean.
+
+
+class _AIMultiDayReviewDialogState extends State<AIMultiDayReviewDialog> with TickerProviderStateMixin {
+  late Map<DateTime, List<_ScheduleItem>> _editableSchedules;
+  late TabController _tabController;
+  late List<DateTime> _sortedDates;
+
+  @override
+  void initState() {
+    super.initState();
+    _sortedDates = widget.dailyResults.keys.toList()..sort();
+    
+    // Initialize editable schedules
+    _editableSchedules = {};
+    for (var date in _sortedDates) {
+        final result = widget.dailyResults[date]!;
+        final scheduleMap = Map<String, String>.from(result['schedule'] ?? {});
+        
+        _editableSchedules[date] = scheduleMap.entries
+            .map((e) => _ScheduleItem(e.key, e.value))
+            .toList();
+    }
+
+    _tabController = TabController(length: _sortedDates.length, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    for (var list in _editableSchedules.values) {
+        for (var item in list) {
+            item.dispose();
+        }
+    }
+    super.dispose();
+  }
+
+  void _addItem(DateTime date) {
+      if (!_editableSchedules.containsKey(date)) return;
+      setState(() {
+          _editableSchedules[date]!.add(_ScheduleItem("", ""));
+      });
+  }
+
+  void _removeItem(DateTime date, int index) {
+      if (!_editableSchedules.containsKey(date)) return;
+      setState(() {
+          _editableSchedules[date]![index].dispose();
+          _editableSchedules[date]!.removeAt(index);
+      });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Batch Schedule Review'),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 500,
+        child: Column(
+          children: [
+            TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              labelColor: Colors.blue,
+              tabs: _sortedDates.map((d) => Tab(text: DateFormat('E, MMM d').format(d))).toList(),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: _sortedDates.map((date) {
+                    final items = _editableSchedules[date] ?? [];
+                    final result = widget.dailyResults[date]!;
+                    final reasoning = result['reasoning'] ?? '';
+
+                    return Column(
+                        children: [
+                            if (reasoning.isNotEmpty) ...[
+                                Container(
+                                    padding: const EdgeInsets.all(8),
+                                    color: Colors.grey[100],
+                                    width: double.infinity,
+                                    child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxHeight: 60),
+                                        child: SingleChildScrollView(
+                                            child: MarkdownBody(
+                                                data: reasoning, 
+                                                styleSheet: MarkdownStyleSheet(
+                                                    p: const TextStyle(fontSize: 12),
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                                const Divider(),
+                            ],
+                            Expanded(
+                                child: ListView.builder(
+                                    itemCount: items.length + 1,
+                                    itemBuilder: (ctx, i) {
+                                        if (i == items.length) {
+                                            return TextButton.icon(
+                                                onPressed: () => _addItem(date),
+                                                icon: const Icon(Icons.add),
+                                                label: const Text('Add Slot'),
+                                            );
+                                        }
+
+                                        final item = items[i];
+                                        return Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            child: Row(
+                                                children: [
+                                                    // Time
+                                                    SizedBox(
+                                                        width: 80,
+                                                        child: TextField(
+                                                            controller: item.timeCtrl,
+                                                            decoration: const InputDecoration(
+                                                                hintText: 'Time',
+                                                                isDense: true,
+                                                                contentPadding: EdgeInsets.all(8),
+                                                                border: OutlineInputBorder(),
+                                                            ),
+                                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                                        ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    // Activity
+                                                    Expanded(
+                                                        child: TextField(
+                                                            controller: item.activityCtrl,
+                                                            decoration: InputDecoration(
+                                                                hintText: 'Activity',
+                                                                isDense: true,
+                                                                contentPadding: const EdgeInsets.all(8),
+                                                                border: const OutlineInputBorder(),
+                                                                suffixIcon: Builder(
+                                                                  builder: (context) {
+                                                                    final val = item.activityCtrl.text;
+                                                                    if (widget.taskActivities != null && widget.taskActivities!.containsKey(val)) {
+                                                                       return Padding(
+                                                                         padding: const EdgeInsets.only(right: 8.0),
+                                                                         child: Chip(
+                                                                           label: Text(widget.taskActivities![val]!, style: const TextStyle(fontSize: 10)),
+                                                                           visualDensity: VisualDensity.compact,
+                                                                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                                         ),
+                                                                       );
+                                                                    }
+                                                                    return const SizedBox.shrink();
+                                                                  }
+                                                                ),
+                                                            ),
+                                                            style: const TextStyle(fontSize: 13),
+                                                            onChanged: (_) => setState(() {}),
+                                                        ),
+                                                    ),
+                                                    IconButton(
+                                                        icon: const Icon(Icons.close, color: Colors.grey, size: 20),
+                                                        onPressed: () => _removeItem(date, i),
+                                                        tooltip: 'Remove',
+                                                    ),
+                                                ],
+                                            ),
+                                        );
+                                    },
+                                ),
+                            ),
+                        ],
+                    );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            // Reconstruct all schedules
+            final Map<DateTime, Map<String, String>> finalSchedules = {};
+            
+            for (var date in _sortedDates) {
+                final Map<String, String> schedule = {};
+                final items = _editableSchedules[date] ?? [];
+                
+                for (var item in items) {
+                     if (item.timeCtrl.text.isNotEmpty && item.activityCtrl.text.isNotEmpty) {
+                         schedule[item.timeCtrl.text] = item.activityCtrl.text;
+                     }
+                }
+                
+                if (schedule.isNotEmpty) {
+                    finalSchedules[date] = schedule;
+                }
+            }
+
+            // Show saving indicator?
+            showDialog(
+                context: context, 
+                barrierDismissible: false,
+                builder: (ctx) => const Center(child: CircularProgressIndicator())
+            );
+
+            await widget.onApply(finalSchedules);
+            
+            if (context.mounted) {
+                Navigator.pop(context); // Pop loading
+                Navigator.pop(context); // Pop Review Dialog
+            }
+          },
+          child: const Text('Apply All'),
+        ),
+      ],
+    );
   }
 }

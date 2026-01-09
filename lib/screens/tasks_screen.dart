@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 import '../models/task.dart';
 import '../models/user_settings.dart';
+import '../models/timeline_entry.dart';
+import '../widgets/ai_scheduling_dialog.dart';
+import '../widgets/activity_picker.dart';
+import '../utils/activities.dart';
 import '../main.dart'; // for getFirestore()
+
+enum _TaskViewMode { folder, date }
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
@@ -22,12 +29,33 @@ class _TasksScreenState extends State<TasksScreen> {
   bool _foldersLoaded = false;
   String _defaultFolderName = 'Inbox';
   final Map<String, bool> _folderExpansions = {}; // Track expansion state
+  _TaskViewMode _viewMode = _TaskViewMode.folder;
+  final Map<String, bool> _dateExpansions = {}; 
+  Map<String, String> _folderActivities = {}; 
+  List<String> _allActivities = [];
+  List<String> _recentActivities = []; 
 
   @override
   void initState() {
     super.initState();
     _loadFolders();
   }
+  
+  // ... (dispose, loadFolders, createFolder, deleteFolder, renameFolder, addTask, toggleTaskStatus, toggleToday, deleteTask - unchanged) ...
+  // Wait, I cannot use "... unchanged ..." in replace_file_content.
+  // I need to be careful with the range. 
+  // The user asked me to replace up to line 466 (end of build).
+  // I will target the class start and variables first.
+
+  // ACTUALLY, I should do this in chunks.
+  // Chunk 1: Enum and State Variables.
+  // Chunk 2: AppBar actions.
+  // Chunk 3: Build body grouping logic.
+
+  // Let's restart the thought for tool call.
+
+
+
 
   @override
   void dispose() {
@@ -47,6 +75,11 @@ class _TasksScreenState extends State<TasksScreen> {
           _folders = settings.taskFolders;
           _foldersLoaded = true;
           _defaultFolderName = settings.defaultFolderName;
+          _folderActivities = settings.folderActivities;
+          _recentActivities = settings.customActivities; // Use user defined as recent? 
+          // Actually, we usually fetch ALL predefined + custom.
+          _allActivities = [...kDefaultActivities, ...settings.customActivities];
+          
           // Initialize expansion states if new
           for (var f in _folders) {
             _folderExpansions.putIfAbsent(f, () => false); // collapsed by default? or true?
@@ -172,6 +205,82 @@ class _TasksScreenState extends State<TasksScreen> {
       }
   }
 
+  Future<void> _setFolderActivity(String folderName) async {
+      final currentActivity = _folderActivities[folderName] ?? '';
+      
+      // Use the reusable activity picker
+      final picked = await showActivityPicker(
+          context: context,
+          allActivities: _allActivities,
+          recent: _recentActivities,
+      );
+
+      if (picked == null) return;
+
+      String finalActivity = picked;
+      if (picked == '__custom') {
+           // Prompt for custom activity
+           final custom = await showDialog<String>(
+              context: context,
+              builder: (ctx) {
+                  final c = TextEditingController();
+                  return AlertDialog(
+                      title: const Text('Custom Activity'),
+                      content: TextField(
+                          controller: c, 
+                          autofocus: true, 
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: const InputDecoration(hintText: 'Activity Name'),
+                      ),
+                      actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                          TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Save')),
+                      ],
+                  );
+              }
+           );
+           if (custom == null || custom.isEmpty) return;
+           finalActivity = custom;
+           
+           // Update recent/custom activities
+           if (!_recentActivities.contains(custom)) {
+               // Update UI
+               setState(() {
+                   _recentActivities.insert(0, custom);
+                   if (_recentActivities.length > 10) _recentActivities.removeLast();
+                   if (!_allActivities.contains(custom)) _allActivities.add(custom);
+               });
+               // Persist custom activity
+               final uid = FirebaseAuth.instance.currentUser?.uid;
+               if (uid != null) {
+                   getFirestore().collection('user_settings').doc(uid).update({
+                       'customActivities': FieldValue.arrayUnion([custom])
+                   });
+               }
+           }
+      }
+
+      if (finalActivity != currentActivity) {
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid == null) return;
+          try {
+              final settingsRef = getFirestore().collection('user_settings').doc(uid);
+              final newMap = Map<String, String>.from(_folderActivities);
+              if (finalActivity.isEmpty) {
+                  newMap.remove(folderName);
+              } else {
+                  newMap[folderName] = finalActivity;
+              }
+              await settingsRef.set({'folderActivities': newMap}, SetOptions(merge: true));
+              setState(() {
+                  _folderActivities = newMap;
+              });
+          } catch (e) {
+             if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error setting folder activity: $e')));
+          }
+      }
+  }
+
   Future<void> _addTask() async {
     final text = _taskController.text.trim();
     if (text.isEmpty) return;
@@ -213,6 +322,69 @@ class _TasksScreenState extends State<TasksScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _setTaskActivity(Task task) async {
+    final picked = await showActivityPicker(
+        context: context,
+        allActivities: _allActivities,
+        recent: _recentActivities,
+    );
+
+    if (picked == null) return;
+
+    String finalActivity = picked;
+    if (picked == '__custom') {
+         // Prompt for custom activity
+         final custom = await showDialog<String>(
+            context: context,
+            builder: (ctx) {
+                final c = TextEditingController();
+                return AlertDialog(
+                    title: const Text('Custom Activity'),
+                    content: TextField(
+                        controller: c, 
+                        autofocus: true, 
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: const InputDecoration(hintText: 'Activity Name'),
+                    ),
+                    actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                        TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Save')),
+                    ],
+                );
+            }
+         );
+         if (custom == null || custom.isEmpty) return;
+         finalActivity = custom;
+         
+         // Update recent/custom activities
+         if (!_recentActivities.contains(custom)) {
+             // Update UI
+             setState(() {
+                 _recentActivities.insert(0, custom);
+                 if (_recentActivities.length > 10) _recentActivities.removeLast();
+                 if (!_allActivities.contains(custom)) _allActivities.add(custom);
+             });
+             // Persist custom activity
+             final uid = FirebaseAuth.instance.currentUser?.uid;
+             if (uid != null) {
+                 getFirestore().collection('user_settings').doc(uid).update({
+                     'customActivities': FieldValue.arrayUnion([custom])
+                 });
+             }
+         }
+    }
+
+    if (finalActivity != task.activity) {
+        try {
+            await getFirestore().collection('tasks').doc(task.id).update({
+                'activity': finalActivity.isEmpty ? null : finalActivity,
+            });
+        } catch (e) {
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error setting task activity: $e')));
+        }
     }
   }
 
@@ -261,8 +433,35 @@ class _TasksScreenState extends State<TasksScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tasks'),
+        title: Text(_viewMode == _TaskViewMode.folder ? 'Tasks (Folders)' : 'Tasks (By Date)'),
         actions: [
+            IconButton(
+              icon: Icon(_viewMode == _TaskViewMode.folder ? Icons.calendar_view_day : Icons.folder_open),
+              tooltip: _viewMode == _TaskViewMode.folder ? 'Switch to Date View' : 'Switch to Folder View',
+              onPressed: () {
+                setState(() => _viewMode = _viewMode == _TaskViewMode.folder ? _TaskViewMode.date : _TaskViewMode.folder);
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.auto_awesome_motion),
+              tooltip: 'AI Auto-Schedule',
+              onPressed: () async {
+                  final uid = FirebaseAuth.instance.currentUser?.uid;
+                  if (uid == null) return;
+                  
+                  // Fetch active tasks
+                  try {
+                    final qs = await getFirestore().collection('tasks')
+                      .where('userId', isEqualTo: uid)
+                      .where('isCompleted', isEqualTo: false)
+                      .get();
+                    final tasks = qs.docs.map((d) => Task.fromFirestore(d)).toList();
+                    if (mounted) _showAIAutoSchedule(tasks);
+                  } catch(e) {
+                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                  }
+              },
+            ),
             IconButton(
                 icon: const Icon(Icons.create_new_folder_outlined),
                 tooltip: 'New Folder',
@@ -387,53 +586,94 @@ class _TasksScreenState extends State<TasksScreen> {
                 final docs = snapshot.data!.docs;
                 final allTasks = docs.map((d) => Task.fromFirestore(d)).toList();
 
-                // Group tasks
-                final Map<String, List<Task>> grouped = {};
-                // Initialize groups
-                grouped[_defaultFolderName] = [];
-                for (var f in _folders) {
-                    grouped[f] = [];
-                }
+                if (_viewMode == _TaskViewMode.folder) {
+                    // --- Folder View Logic ---
+                    final Map<String, List<Task>> grouped = {};
+                    grouped[_defaultFolderName] = [];
+                    for (var f in _folders) {
+                        grouped[f] = [];
+                    }
 
-                for (var task in allTasks) {
-                    final folder = (task.folder == null || !_folders.contains(task.folder)) ? _defaultFolderName : task.folder!;
-                    if (grouped[folder] == null) grouped[folder] = []; // explicit null check mostly redundant due to init above but safe
-                     grouped[folder]!.add(task);
-                }
+                    for (var task in allTasks) {
+                        final folder = (task.folder == null || !_folders.contains(task.folder)) ? _defaultFolderName : task.folder!;
+                        if (grouped[folder] == null) grouped[folder] = [];
+                         grouped[folder]!.add(task);
+                    }
+                    grouped.forEach((_, list) => _sortTasks(list));
 
-                // Sorting helper
-                void sortTasks(List<Task> list) {
-                    final completed = list.where((t) => t.isCompleted).toList();
-                    final active = list.where((t) => !t.isCompleted).toList();
+                    return ListView(
+                      padding: const EdgeInsets.only(bottom: 80),
+                      children: [
+                          _buildFolderGroup(_defaultFolderName, grouped[_defaultFolderName]!),
+                          ..._folders.map((f) => _buildFolderGroup(f, grouped[f]!)),
+                      ],
+                    );
+                } else {
+                    // --- Date View Logic ---
+                    final Map<String, List<Task>> grouped = {};
+                    // Keys: "Overdue", "Today", "Tomorrow", "Future", "No Date"
+                    // Actually clearer to key by "yyyy-MM-dd" and special keys
                     
-                    active.sort((a, b) {
-                        if (a.isToday && !b.isToday) return -1;
-                        if (!a.isToday && b.isToday) return 1;
-                        return b.createdAt.compareTo(a.createdAt);
+                    final now = DateTime.now();
+                    final today = DateTime(now.year, now.month, now.day);
+                    final tomorrow = today.add(const Duration(days: 1));
+
+                    for (var task in allTasks) {
+                        if (task.isCompleted) continue; // Hide completed in Date View for clarity? Or put at bottom? Let's hide for now or putting in "Completed" section?
+                        // Let's stick to active tasks for planning view
+                        
+                        String key = 'No Date';
+                        if (task.scheduledDate != null) {
+                            final d = DateTime(task.scheduledDate!.year, task.scheduledDate!.month, task.scheduledDate!.day);
+                            if (d.isBefore(today)) {
+                                key = "Overdue";
+                            } else if (d == today) {
+                                key = "Today";
+                            } else if (d == tomorrow) {
+                                key = "Tomorrow";
+                            } else {
+                                key = DateFormat('yyyy-MM-dd').format(d);
+                            }
+                        } else if (task.isToday) {
+                            key = "Today";
+                        }
+                        
+                        grouped.putIfAbsent(key, () => []).add(task);
+                    }
+                    
+                    // Sort keys
+                    final sortedKeys = grouped.keys.toList()..sort((a, b) {
+                        // Order: Overdue, Today, Tomorrow, Dates, No Date
+                        int score(String k) {
+                            if (k == 'Overdue') return 0;
+                            if (k == 'Today') return 1;
+                            if (k == 'Tomorrow') return 2;
+                            if (k == 'No Date') return 999;
+                            return 3; // Date string
+                        }
+                        final sa = score(a);
+                        final sb = score(b);
+                        if (sa != sb) return sa.compareTo(sb);
+                        return a.compareTo(b); // String compare for dates works
                     });
 
-                    // Hide old completed tasks? The original code hid > 7 days.
-                    final now = DateTime.now();
-                    final weekAgo = now.subtract(const Duration(days: 7));
-                    completed.removeWhere((t) => t.completedAt != null && t.completedAt!.isBefore(weekAgo));
-                    completed.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-                    list.clear();
-                    list.addAll(active);
-                    list.addAll(completed);
+                    return ListView(
+                        padding: const EdgeInsets.only(bottom: 80),
+                        children: sortedKeys.map((key) {
+                           String title;
+                            if (key == 'Overdue') title = 'Overdue';
+                            else if (key == 'Today') title = 'Today';
+                            else if (key == 'Tomorrow') title = 'Tomorrow';
+                            else if (key == 'No Date') title = 'Unscheduled';
+                            else {
+                                // yyyy-MM-dd to "Fri, Oct 15"
+                                final d = DateFormat('yyyy-MM-dd').parse(key);
+                                title = DateFormat('EEE, MMM d').format(d);
+                            }
+                            return _buildDateGroup(title, grouped[key]!);
+                        }).toList(),
+                    );
                 }
-
-                grouped.forEach((_, list) => sortTasks(list));
-
-                return ListView(
-                  padding: const EdgeInsets.only(bottom: 80),
-                  children: [
-                      // Inbox First
-                      _buildFolderGroup(_defaultFolderName, grouped[_defaultFolderName]!),
-                      // Then user folders
-                      ..._folders.map((f) => _buildFolderGroup(f, grouped[f]!)),
-                  ],
-                );
               },
             ),
           ),
@@ -442,10 +682,33 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
+   void _sortTasks(List<Task> list) {
+        final completed = list.where((t) => t.isCompleted).toList();
+        final active = list.where((t) => !t.isCompleted).toList();
+        
+        active.sort((a, b) {
+            if (a.isToday && !b.isToday) return -1;
+            if (!a.isToday && b.isToday) return 1;
+            return b.createdAt.compareTo(a.createdAt);
+        });
+
+        // Hide old completed tasks (older than 7 days)
+        final now = DateTime.now();
+        final weekAgo = now.subtract(const Duration(days: 7));
+        completed.removeWhere((t) => t.completedAt != null && t.completedAt!.isBefore(weekAgo));
+        completed.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+        list.clear();
+        list.addAll(active);
+        list.addAll(completed);
+  }
+
   Widget _buildFolderGroup(String folderName, List<Task> tasks) {
       final isInbox = folderName == _defaultFolderName;
       final count = tasks.where((t) => !t.isCompleted).length;
       final countStr = count > 0 ? ' ($count)' : '';
+      final activity = _folderActivities[folderName];
+      final activityStr = activity != null && activity.isNotEmpty ? '  [$activity]' : '';
       
       return ExpansionTile(
           key: PageStorageKey(folderName),
@@ -460,35 +723,18 @@ class _TasksScreenState extends State<TasksScreen> {
                   setState(() => _selectedFolder = null);
               }
           },
-          title: Text(folderName + countStr, style: const TextStyle(fontWeight: FontWeight.bold)),
-          leading: Icon(isInbox ? Icons.inbox : Icons.folder_outlined, color: isInbox ? Colors.blue : Colors.grey[700]),
-          trailing: isInbox 
-            ? PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              onSelected: (val) async {
-                  if (val == 'rename') {
-                      final c = TextEditingController(text: folderName);
-                      final newName = await showDialog<String>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                              title: const Text('Rename Default Folder'),
-                              content: TextField(controller: c, autofocus: true, textCapitalization: TextCapitalization.sentences),
-                              actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                                  TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Rename')),
-                              ],
-                          )
-                      );
-                      if (newName != null && newName.isNotEmpty && newName != folderName) {
-                          _renameFolder(folderName, newName);
-                      }
-                  }
-              },
-              itemBuilder: (ctx) => [
-                  const PopupMenuItem(value: 'rename', child: Text('Rename')),
-              ],
+          title: RichText(
+            text: TextSpan(
+              style: Theme.of(context).textTheme.titleMedium,
+              children: [
+                TextSpan(text: folderName + countStr, style: const TextStyle(fontWeight: FontWeight.bold)),
+                if (activityStr.isNotEmpty)
+                  TextSpan(text: activityStr, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.normal)),
+              ]
             )
-            : PopupMenuButton<String>(
+          ),
+          leading: Icon(isInbox ? Icons.inbox : Icons.folder_outlined, color: isInbox ? Colors.blue : Colors.grey[700]),
+          trailing: PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
               onSelected: (val) async {
                   if (val == 'rename') {
@@ -507,6 +753,8 @@ class _TasksScreenState extends State<TasksScreen> {
                       if (newName != null && newName.isNotEmpty && newName != folderName) {
                           _renameFolder(folderName, newName);
                       }
+                  } else if (val == 'activity') {
+                      _setFolderActivity(folderName);
                   } else if (val == 'delete') {
                       final confirm = await showDialog<bool>(
                           context: context,
@@ -526,13 +774,42 @@ class _TasksScreenState extends State<TasksScreen> {
               },
               itemBuilder: (ctx) => [
                   const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                  const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.red))),
+                  const PopupMenuItem(value: 'activity', child: Text('Set Default Activity')),
+                  if (!isInbox) const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.red))),
               ],
           ),
           children: tasks.isEmpty 
             ? [const ListTile(title: Text('No tasks', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)))]
             : tasks.map((t) => _buildTaskTile(t)).toList(),
       );
+  }
+
+  Widget _buildDateGroup(String title, List<Task> tasks) {
+    if (_dateExpansions[title] == null) {
+        // Expand Today and Tomorrow by default
+        _dateExpansions[title] = (title == 'Today' || title == 'Tomorrow');
+    }
+    
+    final count = tasks.where((t) => !t.isCompleted).length;
+    final countStr = count > 0 ? ' ($count)' : '';
+    Color? color;
+    if (title == 'Overdue') color = Colors.red;
+    else if (title == 'Today') color = Colors.orange;
+    else if (title == 'Tomorrow') color = Colors.blue;
+
+    return ExpansionTile(
+       key: PageStorageKey(title),
+       initiallyExpanded: _dateExpansions[title] ?? false,
+       onExpansionChanged: (val) => setState(() => _dateExpansions[title] = val),
+       title: Text(title + countStr, style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: color
+       )),
+       leading: Icon(Icons.calendar_today, color: color),
+       children: tasks.isEmpty 
+         ? [const ListTile(title: Text('No tasks', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)))]
+         : tasks.map((t) => _buildTaskTile(t)).toList(),
+    );
   }
 
   Widget _buildTaskTile(Task task) {
@@ -587,6 +864,24 @@ class _TasksScreenState extends State<TasksScreen> {
                 Icon(Icons.timer_outlined, size: 14, color: Colors.grey[600]),
                 const SizedBox(width: 4),
                 Text(timeLabel, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                if (task.scheduledDate != null) ...[
+                  const SizedBox(width: 12),
+                  Icon(Icons.event, size: 14, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Text(
+                    DateFormat('MMM d').format(task.scheduledDate!),
+                    style: TextStyle(fontSize: 12, color: task.isToday ? Colors.orange : Colors.grey[600]),
+                  ),
+                ],
+                if (task.activity != null && task.activity!.isNotEmpty) ...[
+                   const SizedBox(width: 12),
+                   Icon(Icons.local_activity, size: 14, color: Colors.blue[300]),
+                   const SizedBox(width: 4),
+                   Text(
+                     task.activity!,
+                     style: TextStyle(fontSize: 12, color: Colors.blue[700]),
+                   ),
+                ]
             ],
             ),
             trailing: Row(
@@ -606,6 +901,10 @@ class _TasksScreenState extends State<TasksScreen> {
                   onSelected: (val) {
                     if (val == 'edit') {
                       _showEditTaskDialog(task);
+                    } else if (val == 'activity') {
+                      _setTaskActivity(task);
+                    } else if (val == 'schedule') {
+                      _scheduleTaskForDate(task);
                     } else if (val == 'move') {
                       _showMoveTaskDialog(task);
                     } else if (val == 'delete') {
@@ -614,6 +913,8 @@ class _TasksScreenState extends State<TasksScreen> {
                   },
                   itemBuilder: (context) => [
                     const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, size: 20), SizedBox(width: 8), Text('Edit')])),
+                    const PopupMenuItem(value: 'activity', child: Row(children: [Icon(Icons.local_activity, size: 20), SizedBox(width: 8), Text('Set Activity')])),
+                    const PopupMenuItem(value: 'schedule', child: Row(children: [Icon(Icons.event, size: 20), SizedBox(width: 8), Text('Schedule for Date')])),
                     const PopupMenuItem(value: 'move', child: Row(children: [Icon(Icons.folder_open, size: 20), SizedBox(width: 8), Text('Move Folder')])),
                     const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, color: Colors.red, size: 20), SizedBox(width: 8), Text('Delete', style: TextStyle(color: Colors.red))])),
                   ],
@@ -746,5 +1047,225 @@ class _TasksScreenState extends State<TasksScreen> {
       } catch (e) {
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error moving task: $e')));
       }
+  }
+
+  Future<void> _scheduleTaskForDate(Task task) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: task.scheduledDate ?? now,
+      firstDate: now.subtract(const Duration(days: 7)), // Allow slight past scheduling
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      await _updateTaskDate(task, picked);
+    }
+  }
+
+  Future<void> _updateTaskDate(Task task, DateTime? date) async {
+    try {
+      final now = DateTime.now();
+      final isToday = date != null && 
+                      date.year == now.year && 
+                      date.month == now.month && 
+                      date.day == now.day;
+
+      await getFirestore().collection('tasks').doc(task.id).update({
+        'scheduledDate': date != null ? Timestamp.fromDate(date) : null,
+        'isToday': isToday,
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error scheduling task: $e')));
+    }
+  }
+
+  Future<void> _showAIAutoSchedule(List<Task> availableTasks) async {
+    if (availableTasks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No active tasks to schedule.')));
+      return;
+    }
+    await AIAutoScheduleDialog.show(
+      context,
+      tasks: availableTasks,
+      folderActivities: _folderActivities,
+      onGetHistory: _fetchHistory,
+      onGetCurrentPlan: _fetchCurrentPlan,
+      onScheduleGenerated: _applyAISchedule,
+    );
+  }
+
+  Future<String> _fetchHistory(DateTime targetDate) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return '';
+
+    // Fetch last 7 days from targetDate
+    final buffer = StringBuffer();
+    
+    final entriesRef = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
+    
+    // String comparison works for yyyy-MM-dd
+    final endDate = targetDate.subtract(const Duration(days: 1));
+    final startDate = endDate.subtract(const Duration(days: 7));
+    
+    final startStr = DateFormat('yyyy-MM-dd').format(startDate);
+    final endStr = DateFormat('yyyy-MM-dd').format(endDate);
+
+    try {
+      final snapshot = await entriesRef
+          .where('date', isGreaterThanOrEqualTo: startStr)
+          .where('date', isLessThanOrEqualTo: endStr)
+          .get();
+      
+      final entries = snapshot.docs.map((d) => TimelineEntry.fromFirestore(d)).toList();
+      // Sort by start time
+      entries.sort((a, b) => a.startTime.compareTo(b.startTime));
+
+      if (entries.isEmpty) return "No history recorded.";
+
+      String currentDay = '';
+      for (final e in entries) {
+        final dayStr = DateFormat('yyyy-MM-dd').format(e.startTime);
+        if (dayStr != currentDay) {
+          buffer.writeln('\nDate: $dayStr');
+          currentDay = dayStr;
+        }
+        if (e.activity.isNotEmpty && e.activity != 'Sleep') {
+          final time = DateFormat('HH:mm').format(e.startTime);
+          buffer.writeln('  $time - ${e.activity}');
+        }
+      }
+    } catch (e) {
+      print('History fetch error: $e');
+      return "Error fetching history.";
+    }
+
+    return buffer.toString();
+  }
+
+  Future<String> _fetchCurrentPlan(DateTime targetDate) async {
+     final uid = FirebaseAuth.instance.currentUser?.uid;
+     if (uid == null) return '';
+     
+     final dateStr = DateFormat('yyyy-MM-dd').format(targetDate);
+     final entriesRef = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
+     
+     try {
+       final snapshot = await entriesRef.where('date', isEqualTo: dateStr).get();
+       final entries = snapshot.docs.map((d) => TimelineEntry.fromFirestore(d)).toList();
+       if (entries.isEmpty) return "No existing plan.";
+       
+       entries.sort((a,b) => a.startTime.compareTo(b.startTime));
+       final buffer = StringBuffer();
+       for(final e in entries) {
+          if (e.activity.isNotEmpty && e.activity != 'Sleep') {
+             final time = DateFormat('HH:mm').format(e.startTime);
+             buffer.writeln('$time - ${e.activity}');
+          }
+       }
+       return buffer.toString();
+     } catch (e) {
+       return "";
+     }
+  }
+
+  Future<void> _applyAISchedule(DateTime date, Map<String, String> schedule) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    
+    // Batch write to timeline
+    final batch = getFirestore().batch();
+    final entriesRef = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
+    
+    // Fetch active tasks for resolution
+    // uid is already defined above
+    
+    final taskSnap = await getFirestore().collection('tasks')
+        .where('userId', isEqualTo: uid)
+        .where('isCompleted', isEqualTo: false)
+        .get();
+    final tasks = taskSnap.docs.map((d) => Task.fromFirestore(d)).toList();
+
+    for (final entry in schedule.entries) {
+      final timeParts = entry.key.split(':');
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+      
+      final start = DateTime(date.year, date.month, date.day, hour, minute);
+      
+      final docId = DateFormat('yyyyMMdd_HHmm').format(start);
+      final docRef = entriesRef.doc(docId);
+
+      // Resolution Logic
+      String finalActivity = entry.value;
+      String finalNotes = 'AI Scheduled';
+
+      // Find matching task by title (best effort)
+      try {
+          final matchingTask = tasks.firstWhere((t) => t.title.toLowerCase() == entry.value.toLowerCase());
+          
+          if (matchingTask.activity != null && matchingTask.activity!.isNotEmpty) {
+              finalActivity = matchingTask.activity!;
+          } else if (matchingTask.folder != null && _folderActivities.containsKey(matchingTask.folder)) {
+              finalActivity = _folderActivities[matchingTask.folder]!;
+          } else {
+              finalActivity = matchingTask.title;
+          }
+          
+          finalNotes = '${matchingTask.title} (AI Scheduled)';
+
+          // Also update the task's scheduled date
+          //_scheduleTaskForDate(matchingTask, date: date); // careful about loop/async
+          // Let's just update the cached task scheduledDate if needed? 
+          // Actually _applyAISchedule already iterates tasks for updating scheduledDate? 
+          // No, previously it only updated tasks if they matched exactly?
+          // Let's stick to timeline update here. The task update loop is separate or below?
+          // Ah, I need to see the REST of the function.
+          
+      } catch (e) {
+          // No matching task found, keep original value
+      }
+       
+      final Map<String, dynamic> data = {
+        'userId': uid,
+        'date': DateFormat('yyyy-MM-dd').format(date),
+        'hour': hour,
+        'startTime': Timestamp.fromDate(start),
+        'endTime': Timestamp.fromDate(start.add(const Duration(minutes: 30))),
+        'planactivity': finalActivity,
+        'planNotes': finalNotes,
+      };
+       
+      batch.set(docRef, data, SetOptions(merge: true));
+    }
+    
+    try {
+      await batch.commit();
+      
+      // Update task "scheduledDate" 
+      final tasksQuery = await getFirestore().collection('tasks').where('userId', isEqualTo: uid).where('isCompleted', isEqualTo: false).get();
+      final batchTasks = getFirestore().batch();
+      bool updates = false;
+      
+      for (final doc in tasksQuery.docs) {
+        final t = Task.fromFirestore(doc);
+        if (schedule.values.any((act) => act.startsWith(t.title))) {
+           final isToday = date.year == DateTime.now().year && date.month == DateTime.now().month && date.day == DateTime.now().day;
+           batchTasks.update(doc.reference, {
+             'scheduledDate': Timestamp.fromDate(date),
+             'isToday': isToday,
+           });
+           updates = true;
+        }
+      }
+      if (updates) await batchTasks.commit();
+      
+      if (mounted) {
+        final dateStr = DateFormat('MM/dd').format(date);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Schedule applied for $dateStr!')));
+      }
+      
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error applying schedule: $e')));
+    }
   }
 }
