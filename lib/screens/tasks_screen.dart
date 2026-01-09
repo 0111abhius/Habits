@@ -145,6 +145,8 @@ class _TasksScreenState extends State<TasksScreen> {
       }
   }
 
+
+
   Future<void> _renameFolder(String oldName, String newName) async {
       if (newName.isEmpty || _folders.contains(newName)) return;
       
@@ -384,7 +386,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                                           children: [
                                                               SimpleDialogOption(
                                                                   child: Padding(padding: const EdgeInsets.all(8), child: Text(_defaultFolderName)),
-                                                                  onPressed: () => Navigator.pop(c, null),
+                                                                  onPressed: () => Navigator.pop(c, '__INBOX__'),
                                                               ),
                                                               ..._folders.map((f) => SimpleDialogOption(
                                                                   child: Padding(padding: const EdgeInsets.all(8), child: Text(f)),
@@ -393,20 +395,16 @@ class _TasksScreenState extends State<TasksScreen> {
                                                           ],
                                                       )
                                                   );
-                                                  // If explicitly selected, update. If null returned (cancel), do nothing?? 
-                                                  // Wait, popping with null usually means cancel. 
-                                                  // I need a way to select Inbox (null). 
-                                                  // Let's assume the dialog logic handles it.
-                                                  // Actually for SimplyDialog, I passed null for default folder. 
                                                   
-                                                  // Let's refine: null -> Inbox? Or null -> Cancel?
-                                                  // Usually back button returns null.
-                                                  // Let's use a flag or distinct value.
-                                                  
-                                                  // Re-implement folder picker inline or better dialog logic?
-                                                  // Keeping it simple for now. 
                                                   if (chosen != null) {
-                                                      setSheetState(() => selectedFolder = chosen == '__INBOX__' ? null : chosen);
+                                                      final newFolder = chosen == '__INBOX__' ? null : chosen;
+                                                      setSheetState(() {
+                                                          selectedFolder = newFolder;
+                                                          // Auto-fill activity if empty and folder has default
+                                                          if (newFolder != null && _folderActivities.containsKey(newFolder) && selectedActivity == null) {
+                                                              selectedActivity = _folderActivities[newFolder];
+                                                          }
+                                                      });
                                                   }
                                               },
                                           ),
@@ -653,7 +651,24 @@ class _TasksScreenState extends State<TasksScreen> {
                           )
                       );
                       if (name != null && name.isNotEmpty) {
-                          _createFolder(name);
+                          await _createFolder(name);
+                          if (mounted) {
+                              // Ask for default activity?
+                              final wantActivity = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                      title: const Text('Set Default Activity?'),
+                                      content: Text('Would you like to set a default activity for "$name"?'),
+                                      actions: [
+                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+                                          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Yes')),
+                                      ],
+                                  )
+                              );
+                              if (wantActivity == true && mounted) {
+                                  await _setFolderActivity(name);
+                              }
+                          }
                       }
                   },
               ),
@@ -834,12 +849,12 @@ class _TasksScreenState extends State<TasksScreen> {
           ),
           leading: Icon(isInbox ? Icons.inbox : Icons.folder_outlined, color: isInbox ? Colors.blue : Colors.grey[700]),
           trailing: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
+              icon: Icon(Icons.settings_outlined, size: 20, color: Colors.grey[600]),
               onSelected: (val) async {
                   if (val == 'rename') {
                       final c = TextEditingController(text: folderName);
                       final newName = await showDialog<String>(
-                          context: context,
+                          context: context, 
                           builder: (ctx) => AlertDialog(
                               title: const Text('Rename Folder'),
                               content: TextField(controller: c, autofocus: true, textCapitalization: TextCapitalization.sentences),
@@ -871,11 +886,32 @@ class _TasksScreenState extends State<TasksScreen> {
                       }
                   }
               },
-              itemBuilder: (ctx) => [
-                  const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                  const PopupMenuItem(value: 'activity', child: Text('Set Default Activity')),
-                  if (!isInbox) const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.red))),
-              ],
+              itemBuilder: (ctx) {
+                  final currentAct = _folderActivities[folderName];
+                  return [
+                    const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                    PopupMenuItem(
+                        value: 'activity', 
+                        child: Row(
+                            children: [
+                                const Text('Default Activity'),
+                                if (currentAct != null) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                            color: Colors.blueAccent.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(currentAct, style: const TextStyle(fontSize: 10, color: Colors.blueAccent)),
+                                    )
+                                ]
+                            ],
+                        )
+                    ),
+                    if (!isInbox) const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.red))),
+                  ];
+              },
           ),
           children: tasks.isEmpty 
             ? [const ListTile(title: Text('No tasks', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)))]
@@ -964,17 +1000,23 @@ class _TasksScreenState extends State<TasksScreen> {
       int remaining = duration;
       DateTime currentStart = start;
       
-      // Logic to split across hour blocks if needed, similar to AI schedule
-      // or just one block if it fits. 
-      // Simplified: Just loop until duration covered.
+      // Determine Activity
+      String finalActivity = task.activity ?? '';
+      if (finalActivity.isEmpty && task.folder != null && _folderActivities.containsKey(task.folder)) {
+          finalActivity = _folderActivities[task.folder]!;
+      }
+      if (finalActivity.isEmpty) {
+          finalActivity = task.title;
+      }
       
+      // Notes is the task title
+      String finalNotes = task.title;
+
       while (remaining > 0) {
           int chunk = remaining;
-          // If crossing hour boundary? 
-          // Simple approach: Just write one entry per hour block ensuring we fill slots?
-          // Let's stick to the AI logic: roughly 60 mins max per entry if we want to follow 'hour' structure,
-          // but strictly speaking, we can write any start/end. 
-          // Using 60 min chunks is safer for the existing visualization if it relies on hour slots.
+          // Split at hour boundary logic?
+          // To be perfectly safe and support visualization, we usually split at hour boundaries or simply max 60 mins.
+          // Let's stick to max 60 min blocks for now to keep it simple and consistent.
           if (chunk > 60) chunk = 60;
           
           final end = currentStart.add(Duration(minutes: chunk));
@@ -986,8 +1028,8 @@ class _TasksScreenState extends State<TasksScreen> {
              'hour': currentStart.hour,
              'startTime': Timestamp.fromDate(currentStart),
              'endTime': Timestamp.fromDate(end),
-             'planactivity': task.title,
-             'planNotes': 'Scheduled from Tasks',
+             'planactivity': finalActivity,
+             'planNotes': finalNotes,
           }, SetOptions(merge: true));
           
           currentStart = end;
