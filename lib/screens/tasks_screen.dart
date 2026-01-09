@@ -582,21 +582,35 @@ class _TasksScreenState extends State<TasksScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Tasks'),
-          bottom: TabBar(
-            onTap: (index) {
-                setState(() => _viewMode = index == 0 ? _TaskViewMode.folder : _TaskViewMode.date);
-            },
-            tabs: const [
-              Tab(text: 'Folders', icon: Icon(Icons.folder_outlined)),
-              Tab(text: 'Timeline', icon: Icon(Icons.calendar_today)),
-            ],
-          ),
-          actions: [
+    return Scaffold(
+      appBar: AppBar(
+        title: SizedBox(
+           height: 36,
+           child: SegmentedButton<_TaskViewMode>(
+              segments: const [
+                  ButtonSegment<_TaskViewMode>(
+                      value: _TaskViewMode.folder,
+                      label: Text('Folders'),
+                      icon: Icon(Icons.folder_outlined, size: 16),
+                  ),
+                  ButtonSegment<_TaskViewMode>(
+                      value: _TaskViewMode.date,
+                      label: Text('Timeline'),
+                      icon: Icon(Icons.calendar_today, size: 16),
+                  ),
+              ],
+              selected: {_viewMode},
+              onSelectionChanged: (newSelection) {
+                  setState(() => _viewMode = newSelection.first);
+              },
+              style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+           ),
+        ),
+        centerTitle: true,
+        actions: [
             IconButton(
               icon: const Icon(Icons.auto_awesome_motion),
               tooltip: 'AI Auto-Schedule',
@@ -764,7 +778,6 @@ class _TasksScreenState extends State<TasksScreen> {
                 }
               },
             ),
-      ),
     );
   }
 
