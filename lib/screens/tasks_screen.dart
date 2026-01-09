@@ -1185,23 +1185,26 @@ class _TasksScreenState extends State<TasksScreen> {
         .get();
     final tasks = taskSnap.docs.map((d) => Task.fromFirestore(d)).toList();
 
-    for (final entry in schedule.entries) {
-      final timeParts = entry.key.split(':');
+    // Sort entries by time to ensure we process earliest first
+    final sortedKeys = schedule.keys.toList()..sort();
+    
+    for (final key in sortedKeys) {
+      final value = schedule[key]!;
+      final timeParts = key.split(':');
       final hour = int.parse(timeParts[0]);
       final minute = int.parse(timeParts[1]);
       
       final start = DateTime(date.year, date.month, date.day, hour, minute);
       
-      final docId = DateFormat('yyyyMMdd_HHmm').format(start);
-      final docRef = entriesRef.doc(docId);
-
       // Resolution Logic
-      String finalActivity = entry.value;
+      String finalActivity = value;
       String finalNotes = 'AI Scheduled';
+      int durationMinutes = 60; // Default to 1 hour frame
 
+      Task? matchingTask;
       // Find matching task by title (best effort)
       try {
-          final matchingTask = tasks.firstWhere((t) => t.title.toLowerCase() == entry.value.toLowerCase());
+          matchingTask = tasks.firstWhere((t) => t.title.toLowerCase() == value.toLowerCase());
           
           if (matchingTask.activity != null && matchingTask.activity!.isNotEmpty) {
               finalActivity = matchingTask.activity!;
@@ -1212,30 +1215,48 @@ class _TasksScreenState extends State<TasksScreen> {
           }
           
           finalNotes = '${matchingTask.title} (AI Scheduled)';
-
-          // Also update the task's scheduled date
-          //_scheduleTaskForDate(matchingTask, date: date); // careful about loop/async
-          // Let's just update the cached task scheduledDate if needed? 
-          // Actually _applyAISchedule already iterates tasks for updating scheduledDate? 
-          // No, previously it only updated tasks if they matched exactly?
-          // Let's stick to timeline update here. The task update loop is separate or below?
-          // Ah, I need to see the REST of the function.
+          if (matchingTask.estimatedMinutes > 0) {
+            durationMinutes = matchingTask.estimatedMinutes;
+          }
           
       } catch (e) {
           // No matching task found, keep original value
       }
-       
-      final Map<String, dynamic> data = {
-        'userId': uid,
-        'date': DateFormat('yyyy-MM-dd').format(date),
-        'hour': hour,
-        'startTime': Timestamp.fromDate(start),
-        'endTime': Timestamp.fromDate(start.add(const Duration(minutes: 30))),
-        'planactivity': finalActivity,
-        'planNotes': finalNotes,
-      };
-       
-      batch.set(docRef, data, SetOptions(merge: true));
+      
+      // Calculate blocks needed based on remaining duration
+      int remainingMinutes = durationMinutes;
+      int offsetHours = 0;
+
+      while (remainingMinutes > 0) {
+        final blockStart = start.add(Duration(hours: offsetHours));
+        final blockKey = DateFormat('HH:mm').format(blockStart);
+        
+        // Check for collision with explicit schedule in subsequent blocks
+        if (offsetHours > 0 && schedule.containsKey(blockKey)) {
+          break;
+        }
+
+        // Determine duration for this block (max 60 mins per hour slot)
+        final int minutesToWrite = (remainingMinutes >= 60) ? 60 : remainingMinutes;
+
+        final docId = DateFormat('yyyyMMdd_HHmm').format(blockStart);
+        final docRef = entriesRef.doc(docId);
+        
+        final Map<String, dynamic> data = {
+          'userId': uid,
+          'date': DateFormat('yyyy-MM-dd').format(date),
+          'hour': blockStart.hour,
+          'startTime': Timestamp.fromDate(blockStart),
+          'endTime': Timestamp.fromDate(blockStart.add(Duration(minutes: minutesToWrite))),
+          'planactivity': finalActivity,
+          'planNotes': finalNotes,
+        };
+        
+        batch.set(docRef, data, SetOptions(merge: true));
+        
+        remainingMinutes -= 60; // Advance to next hour slot logic
+        offsetHours++;
+      }
     }
     
     try {
