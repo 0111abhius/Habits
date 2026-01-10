@@ -335,7 +335,7 @@ class _ActivitiesManagementScreenState extends State<ActivitiesManagementScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Manage Activities')),
+      appBar: AppBar(title: const Text('Activities')),
       body: _loading 
           ? const Center(child: CircularProgressIndicator())
           : Column(

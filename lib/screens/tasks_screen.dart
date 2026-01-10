@@ -591,7 +591,7 @@ class _TasksScreenState extends State<TasksScreen> {
                   ),
                   ButtonSegment<_TaskViewMode>(
                       value: _TaskViewMode.date,
-                      label: Text('Timeline'),
+                      label: Text('Schedule'),
                       icon: Icon(Icons.calendar_today, size: 16),
                   ),
               ],

@@ -87,8 +87,8 @@ class _MainScaffoldState extends State<MainScaffold> {
                 label: 'Analytics',
               ),
               NavigationDestination(
-                icon: Icon(Icons.tune),
-                label: 'Manage',
+                icon: Icon(Icons.category),
+                label: 'Activities',
               ),
             ],
           ),
