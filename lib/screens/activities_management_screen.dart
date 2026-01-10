@@ -377,7 +377,7 @@ class _ActivitiesManagementScreenState extends State<ActivitiesManagementScreen>
                       
                       return ExpansionTile(
                         title: Text(act, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        leading: const Icon(Icons.label_outline),
+                        leading: Text(kActivityEmoji[act] ?? '🏷️', style: const TextStyle(fontSize: 24)),
                         trailing: Row(
                            mainAxisSize: MainAxisSize.min,
                            children: [

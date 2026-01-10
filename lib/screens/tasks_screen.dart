@@ -903,7 +903,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                             color: Colors.blueAccent.withOpacity(0.1),
                                             borderRadius: BorderRadius.circular(4),
                                         ),
-                                        child: Text(currentAct, style: const TextStyle(fontSize: 10, color: Colors.blueAccent)),
+                                        child: Text(displayActivity(currentAct), style: const TextStyle(fontSize: 10, color: Colors.blueAccent)),
                                     )
                                 ]
                             ],
