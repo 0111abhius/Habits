@@ -374,37 +374,41 @@ class _TimelineScreenState extends State<TimelineScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
-                    await _loadUserSettings();
-                  },
-                  icon: const Icon(Icons.auto_awesome, size: 18),
-                  label: const Text('AI Plan'),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    side: BorderSide(color: Theme.of(context).primaryColor),
-                  ),
-                ),
+                child: MediaQuery.of(context).size.width < 400
+                    ? IconButton(
+                        icon: const Icon(Icons.auto_awesome),
+                        tooltip: 'AI Plan',
+                        onPressed: () async {
+                          await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                          await _loadUserSettings();
+                        },
+                      )
+                    : OutlinedButton.icon(
+                        onPressed: () async {
+                          await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                          await _loadUserSettings();
+                        },
+                        icon: const Icon(Icons.auto_awesome, size: 18),
+                        label: const Text('AI Plan'),
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          side: BorderSide(color: Theme.of(context).primaryColor),
+                        ),
+                      ),
               ),
               IconButton(
                 icon: const Icon(Icons.access_time),
                 tooltip: 'Jump to Now',
                 onPressed: _scrollToNow,
               ),
-              IconButton(
-                icon: const Icon(Icons.copy_all),
-                tooltip: 'Use Template',
-                onPressed: () async {
-                  await Navigator.pushNamed(context, '/template');
-                  if (mounted) setState(() {});
-                },
-              ),
-
               PopupMenuButton<String>(
                 tooltip: 'Customize',
                 onSelected: (value) async {
                   switch (value) {
+                    case 'template':
+                      await Navigator.pushNamed(context, '/template');
+                      if (mounted) setState(() {});
+                      break;
                     case 'sleep':
                       _showSleepDialog(context);
                       break;
@@ -421,18 +425,28 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   }
                 },
                 itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'sleep',
+                  const PopupMenuItem(
+                    value: 'template',
                     child: ListTile(
-                      leading: const Icon(Icons.bedtime),
-                      title: const Text('Sleep timings'),
+                      leading: Icon(Icons.copy_all),
+                      title: Text('Use Template'),
+                      contentPadding: EdgeInsets.zero,
                     ),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem(
+                    value: 'sleep',
+                    child: ListTile(
+                      leading: Icon(Icons.bedtime),
+                      title: Text('Sleep timings'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
                     value: 'signout',
                     child: ListTile(
-                      leading: const Icon(Icons.logout),
-                      title: const Text('Sign out'),
+                      leading: Icon(Icons.logout),
+                      title: Text('Sign out'),
+                      contentPadding: EdgeInsets.zero,
                     ),
                   ),
                 ],

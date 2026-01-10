@@ -414,16 +414,14 @@ class _TasksScreenState extends State<TasksScreen> {
                                           InputChip(
                                               avatar: const Icon(Icons.timer_outlined, size: 16),
                                               label: Text(estimatedMinutes >= 60 ? '${(estimatedMinutes/60).toStringAsFixed(1)}h' : '${estimatedMinutes}m'),
-                                              onPressed: () {
-                                                  // Cycle through estimates? or show menu
-                                                  // Simple toggle for now: 30 -> 60 -> 90 -> 120 -> 15 -> 30
+                                          onPressed: () {
+                                                  // Cycle through estimates: 30 -> 60 -> 90 -> 120 -> 180 -> 30
                                                   setSheetState(() {
-                                                      if (estimatedMinutes == 15) estimatedMinutes = 30;
-                                                      else if (estimatedMinutes == 30) estimatedMinutes = 60;
+                                                      if (estimatedMinutes == 30) estimatedMinutes = 60;
                                                       else if (estimatedMinutes == 60) estimatedMinutes = 90;
                                                       else if (estimatedMinutes == 90) estimatedMinutes = 120;
                                                       else if (estimatedMinutes == 120) estimatedMinutes = 180;
-                                                      else estimatedMinutes = 15;
+                                                      else estimatedMinutes = 30;
                                                   });
                                               },
                                           ),
