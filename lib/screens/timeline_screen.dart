@@ -70,6 +70,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
   Set<String> _loggedDates = {};
   late Stream<QuerySnapshot> _currentStream;
 
+  // Historical data for suggestions
+  List<TimelineEntry> _yesterdayEntries = [];
+  List<TimelineEntry> _lastWeekEntries = [];
+
   @override
   void initState() {
     super.initState();
@@ -81,7 +85,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
       });
     _loadUserSettings();
     _loadDayComplete();
+    _loadUserSettings();
+    _loadDayComplete();
     _loadLoggedDates();
+    _loadHistoricalData();
   }
 
   @override
@@ -99,6 +106,71 @@ class _TimelineScreenState extends State<TimelineScreen> {
   TimeOfDay _parseTime(String s) {
     final parts = s.split(':');
     return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+  }
+
+  Future<void> _loadHistoricalData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final entriesColl = getFirestore()
+        .collection('timeline_entries')
+        .doc(user.uid)
+        .collection('entries');
+
+    // 1. Yesterday
+    final yesterday = selectedDate.subtract(const Duration(days: 1));
+    final yStr = DateFormat('yyyy-MM-dd').format(yesterday);
+    final ySnap = await entriesColl.where('date', isEqualTo: yStr).get();
+    
+    // 2. Same day last week
+    final lastWeek = selectedDate.subtract(const Duration(days: 7));
+    final wStr = DateFormat('yyyy-MM-dd').format(lastWeek);
+    final wSnap = await entriesColl.where('date', isEqualTo: wStr).get();
+
+    if (mounted) {
+      setState(() {
+        _yesterdayEntries = ySnap.docs.map((d) => TimelineEntry.fromFirestore(d)).toList();
+        _lastWeekEntries = wSnap.docs.map((d) => TimelineEntry.fromFirestore(d)).toList();
+      });
+    }
+  }
+
+  List<String> _getSuggestionsForHour(int hour) {
+    // 1. Last week same hour
+    // 2. Yesterday same hour
+    // 3. Fallback to global recents
+    
+    final Set<String> candidates = {};
+    
+    // Check last week
+    final lastWeekEntry = _lastWeekEntries.firstWhere(
+      (e) => e.startTime.hour == hour && e.activity.isNotEmpty && e.activity != 'Sleep',
+      orElse: () => TimelineEntry.empty(),
+    );
+    if (lastWeekEntry.activity.isNotEmpty) {
+      candidates.add(lastWeekEntry.activity);
+    }
+    
+    // Check yesterday
+    final yesterdayEntry = _yesterdayEntries.firstWhere(
+      (e) => e.startTime.hour == hour && e.activity.isNotEmpty && e.activity != 'Sleep',
+      orElse: () => TimelineEntry.empty(),
+    );
+    if (yesterdayEntry.activity.isNotEmpty) {
+      candidates.add(yesterdayEntry.activity);
+    }
+    
+    // Prioritize context candidates first, then fill remainder with global recents
+    final List<String> result = candidates.toList();
+    
+    for (final act in _recentActivities) {
+      if (result.length >= 3) break;
+      if (!result.contains(act)) {
+        result.add(act);
+      }
+    }
+    
+    return result;
   }
 
   Future<void> _reconcileSleepEntriesForSelectedDate() async {
@@ -334,7 +406,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
               selectedDate = nextDay;
               _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
               _initStream();
+              _initStream();
               _loadDayComplete();
+              _loadHistoricalData();
             });
             // Reset scroll/cache
             _pendingScrollOffset = null;
@@ -347,7 +421,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
               selectedDate = prevDay;
               _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
               _initStream();
+              _initStream();
               _loadDayComplete();
+              _loadHistoricalData();
             });
             // Reset scroll/cache
             _pendingScrollOffset = null;
@@ -464,7 +540,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
                       selectedDate = date;
                       _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
                       _initStream();
+                      _initStream();
                       _loadDayComplete();
+                      _loadHistoricalData();
                     });
                     final key = DateFormat('yyyy-MM-dd').format(selectedDate);
                     final double? saved = _offsetCache[key];
@@ -634,6 +712,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 onToggleSplit: () => _toggleSplit(hour),
                 onUpdateEntry: _updateEntry,
                 availableActivities: _flattenCats(),
+                suggestedActivities: _getSuggestionsForHour(hour),
                 recentActivities: _recentActivities,
                 onPromptCustomActivity: () => _promptCustomActivity(context),
                 onUpdateRecentActivity: (act) {

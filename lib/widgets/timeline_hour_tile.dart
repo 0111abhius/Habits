@@ -16,6 +16,7 @@ class TimelineHourTile extends StatefulWidget {
   final Future<void> Function(TimelineEntry entry, String activity, String notes, {bool isPlan}) onUpdateEntry;
   // We pass these down to reuse the picker logic
   final List<String> availableActivities;
+  final List<String> suggestedActivities;
   final List<String> recentActivities;
   final Future<String?> Function() onPromptCustomActivity;
   final Function(String) onUpdateRecentActivity;
@@ -32,7 +33,9 @@ class TimelineHourTile extends StatefulWidget {
     required this.viewMode,
     required this.onToggleSplit,
     required this.onUpdateEntry,
+
     required this.availableActivities,
+    required this.suggestedActivities,
     required this.recentActivities,
     required this.onPromptCustomActivity,
     required this.onUpdateRecentActivity,
@@ -279,7 +282,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
           children: [
             if (isEmpty) ...[
               // Quick Picks Row
-              ...widget.recentActivities.take(quickCount).map((act) {
+              ...widget.suggestedActivities.take(quickCount).map((act) {
                 final emoji = kActivityEmoji[act];
                 final String? firstChar = (emoji == null && act.isNotEmpty) ? act.characters.first : null;
                 return Padding(

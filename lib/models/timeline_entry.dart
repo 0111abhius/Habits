@@ -60,4 +60,16 @@ class TimelineEntry {
       notes: data['notes'] as String? ?? '',
     );
   }
-} 
+
+  factory TimelineEntry.empty() {
+    return TimelineEntry(
+      id: '',
+      userId: '',
+      date: DateTime.now(),
+      startTime: DateTime.now(),
+      endTime: DateTime.now(),
+      activity: '',
+      notes: '',
+    );
+  }
+}
