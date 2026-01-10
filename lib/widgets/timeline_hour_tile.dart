@@ -121,22 +121,60 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
 
   String _displayLabel(String act) => displayActivity(act);
 
-  Widget _buildCopyButton(TimelineEntry entry) {
-    return InkWell(
-      onTap: () => widget.onUpdateEntry(entry, entry.planactivity, entry.planNotes, isPlan: false),
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Plan', style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(width: 4),
-            Icon(Icons.arrow_forward, size: 14, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 4),
-            Text('Copy', style: Theme.of(context).textTheme.bodySmall), 
-          ],
-        ),
+  Widget _buildGutter({required bool is30}) {
+    // Determine time label
+    String timeLabel;
+    if (!is30) {
+      // Top slot: "9 AM"
+      timeLabel = DateFormat('h a').format(DateTime(2022, 1, 1, widget.hour));
+    } else {
+      // Bottom slot: "9:30"
+      final h = widget.hour;
+      final m = 30;
+      timeLabel = DateFormat('h:mm').format(DateTime(2022, 1, 1, h, m));
+    }
+
+    // Determine button visibility
+    // Show button in 30 slot if split (Merge)
+    // Show button in 00 slot if NOT split (Split)
+    final bool showButton = (is30 && widget.isSplit) || (!is30 && !widget.isSplit);
+
+    return Container(
+      width: 50,
+      decoration: BoxDecoration(
+        border: Border(right: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5))),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 4.0),
+            child: Text(
+              timeLabel,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10, // Smaller font as requested
+              ),
+            ),
+          ),
+          if (showButton)
+            IconButton(
+              icon: Icon(
+                widget.isSplit ? Icons.remove : Icons.call_split,
+                size: 16,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+              tooltip: widget.isSplit ? 'Merge' : 'Split',
+              onPressed: widget.onToggleSplit,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minHeight: 24, minWidth: 24),
+            )
+          else 
+            const SizedBox(height: 24), // Maintain rough width/spacing if needed, or let spacer handle it
+        ],
       ),
     );
   }
@@ -158,36 +196,32 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
       color: isSleepRow ? Colors.blueGrey.withOpacity(0.05) : Theme.of(context).colorScheme.surface,
       surfaceTintColor: Theme.of(context).colorScheme.surfaceTint,
       child: Column(
-            children: [
-              // Custom Header Row
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-                child: Row(
+        children: [
+          // Slot 00
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildGutter(is30: false),
+                Expanded(child: Container(key: widget.key00, child: _buildSubBlock(widget.entry00, 0))),
+              ],
+            ),
+          ),
+          
+          // Slot 30 (if exists)
+          if (widget.entry30 != null) ...[
+             Divider(height: 1, thickness: 1, color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+             IntrinsicHeight(
+               child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                     Expanded(
-                       child: Text(
-                         DateFormat('h a').format(DateTime(2022,1,1,widget.hour)), 
-                         style: Theme.of(context).textTheme.titleSmall
-                       ),
-                     ),
-                     if (widget.viewMode == TimelineViewMode.compare) ...[
-                        // Centered Copy Button
-                        _buildCopyButton(widget.entry00),
-                        const Expanded(child: SizedBox()), 
-                     ] else 
-                        const Expanded(child: SizedBox()),
-
-                     IconButton(
-                        icon: Icon(widget.isSplit ? Icons.remove : Icons.call_split, color: Theme.of(context).colorScheme.primary),
-                        onPressed: widget.onToggleSplit,
-                     ),
+                    _buildGutter(is30: true),
+                    Expanded(child: Container(key: widget.key30, child: _buildSubBlock(widget.entry30!, 30))),
                   ],
-                ),
-              ),
-              Container(key: widget.key00, child: _buildSubBlock(widget.entry00, 0)),
-              if (widget.entry30 != null) 
-                 Container(key: widget.key30, child: _buildSubBlock(widget.entry30!, 30)),
-            ],
+               ),
+             ),
+          ],
+        ],
       ),
     );
 
@@ -225,154 +259,183 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     Widget buildSlot({required bool isPlan, required TextEditingController ctrl}) {
       final currentAct = isPlan ? entry.planactivity : entry.activity;
       final isEmpty = currentAct.isEmpty;
+      final bool isCompare = widget.viewMode == TimelineViewMode.compare;
+      // In compare mode, we have very limited width (approx 50% - gutter - margins).
+      // We drastically reduce items to prevent overflow.
+      final int quickCount = isCompare ? 0 : 3;
+      final double maxLabelWidth = isCompare ? 70.0 : 130.0;
 
       return Container(
         decoration: BoxDecoration(
           color: isPlan 
             ? Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3)
             : Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.1),
-          borderRadius: widget.viewMode == TimelineViewMode.compare
-              ? BorderRadius.horizontal(
-                  left: isPlan ? const Radius.circular(12) : Radius.zero,
-                  right: isPlan ? Radius.zero : const Radius.circular(12))
-              : BorderRadius.circular(12),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+          // No rounded corners needed internally for seamless look, 
+          // or maybe just slight ones? simpler is cleaner.
         ),
-        padding: const EdgeInsets.all(8),
-        child: Column(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8), // Reduced horizontal padding
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (isEmpty) ...[
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ActionChip(
-                    avatar: const Icon(Icons.add, size: 16),
-                    label: const Text('Pick'),
-                    onPressed: () async {
-                      final picked = await showActivityPicker(
-                        context: context,
-                        allActivities: available,
-                         recent: widget.recentActivities,
-                      );
-                      if (picked != null) {
-                         if (picked == '__custom') {
-                            final custom = await widget.onPromptCustomActivity();
-                            if (custom != null && custom.isNotEmpty) {
-                              widget.onUpdateRecentActivity(custom);
-                              widget.onUpdateEntry(entry, custom, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
-                            }
-                         } else {
-                            widget.onUpdateRecentActivity(picked);
-                            widget.onUpdateEntry(entry, picked, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
-                         }
-                      }
+              // Quick Picks Row
+              ...widget.recentActivities.take(quickCount).map((act) {
+                final emoji = kActivityEmoji[act];
+                final String? firstChar = (emoji == null && act.isNotEmpty) ? act.characters.first : null;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6, top: 2),
+                  child: InkWell(
+                    onTap: () {
+                      widget.onUpdateRecentActivity(act);
+                      widget.onUpdateEntry(entry, act, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
                     },
-                    visualDensity: VisualDensity.compact,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Tooltip(
+                      message: act,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                           color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                           shape: BoxShape.circle,
+                        ),
+                        child: emoji != null
+                           ? Text(emoji, style: const TextStyle(fontSize: 18))
+                           : Text(firstChar ?? '?', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      ),
+                    ),
                   ),
-                  ...widget.recentActivities.take(3).map((act) => ActionChip(
-                    label: Text(_displayLabel(act)),
-                    onPressed: () {
-                         widget.onUpdateRecentActivity(act);
-                         widget.onUpdateEntry(entry, act, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
-                    },
-                    visualDensity: VisualDensity.compact,
-                    backgroundColor: Theme.of(context).colorScheme.surface,
-                  )),
-                ],
+                );
+              }),
+              
+              Padding(
+                padding: const EdgeInsets.only(right: 4, top: 2), // slightly tighter padding
+                child: InkWell(
+                  onTap: () async {
+                    final picked = await showActivityPicker(
+                      context: context,
+                      allActivities: available,
+                      recent: widget.recentActivities,
+                    );
+                    if (picked != null) {
+                       if (picked == '__custom') {
+                          final custom = await widget.onPromptCustomActivity();
+                          if (custom != null && custom.isNotEmpty) {
+                             widget.onUpdateRecentActivity(custom);
+                             widget.onUpdateEntry(entry, custom, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                          }
+                       } else {
+                          widget.onUpdateRecentActivity(picked);
+                          widget.onUpdateEntry(entry, picked, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                       }
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: isCompare ? 32 : 36, // Smaller in compare
+                    height: isCompare ? 32 : 36,
+                    decoration: BoxDecoration(
+                       border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.5)),
+                       shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.add, size: isCompare ? 16 : 18),
+                  ),
+                ),
+              ),
+              
+              Padding(
+                padding: const EdgeInsets.only(right: 4.0, top: 6, bottom: 6),
+                child: VerticalDivider(width: 1, thickness: 1, color: Theme.of(context).colorScheme.outlineVariant),
               ),
             ] else 
-              OutlinedButton(
-                onPressed: () async {
-                  final picked = await showActivityPicker(
-                    context: context,
-                    allActivities: available,
-                    recent: widget.recentActivities,
-                  );
-                  if (picked == null) return;
-                  if (picked == '__custom') {
-                    final custom = await widget.onPromptCustomActivity();
-                    if (custom != null && custom.isNotEmpty) {
-                      widget.onUpdateRecentActivity(custom);
-                      widget.onUpdateEntry(entry, custom, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+              Padding(
+                padding: const EdgeInsets.only(top: 4, right: 4),
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final picked = await showActivityPicker(
+                      context: context,
+                      allActivities: available,
+                      recent: widget.recentActivities,
+                    );
+                    if (picked == null) return;
+                    if (picked == '__custom') {
+                      final custom = await widget.onPromptCustomActivity();
+                      if (custom != null && custom.isNotEmpty) {
+                        widget.onUpdateRecentActivity(custom);
+                        widget.onUpdateEntry(entry, custom, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                      }
+                    } else {
+                      widget.onUpdateRecentActivity(picked);
+                      widget.onUpdateEntry(entry, picked, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
                     }
-                  } else {
-                    widget.onUpdateRecentActivity(picked);
-                    widget.onUpdateEntry(entry, picked, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
-                  }
-                },
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                  alignment: Alignment.centerLeft,
-                ),
-                child: Text(
-                  _displayLabel(currentAct),
-                  overflow: TextOverflow.ellipsis,
+                  },
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0), // Compact padding
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxLabelWidth),
+                    child: Text(
+                      _displayLabel(currentAct),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ),
               ),
             
-            TextField(
-              controller: ctrl,
-              maxLines: null,
-              decoration: const InputDecoration(hintText: 'Notes', border: InputBorder.none),
-              onChanged: (val) => _onNoteChanged(minute, val, entry, isPlan),
+            Expanded(
+              child: TextField(
+                controller: ctrl,
+                maxLines: null,
+                style: isCompare ? const TextStyle(fontSize: 13) : null, // Smaller text in compare
+                decoration: InputDecoration(
+                  hintText: 'Notes', 
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: isCompare ? 11 : 10),
+                ),
+                onChanged: (val) => _onNoteChanged(minute, val, entry, isPlan),
+              ),
             ),
           ],
         ),
       );
     }
 
-    // Combine
-    Widget innerRow;
     switch (widget.viewMode) {
       case TimelineViewMode.plan:
-        innerRow = Row(children: [Expanded(child: buildSlot(isPlan: true, ctrl: planCtrl))]); // Expanded ensures full width
-        break;
+        return buildSlot(isPlan: true, ctrl: planCtrl);
       case TimelineViewMode.actual:
-        innerRow = Row(children: [Expanded(child: buildSlot(isPlan: false, ctrl: retroCtrl))]);
-        break;
+        return buildSlot(isPlan: false, ctrl: retroCtrl);
       case TimelineViewMode.compare:
-        innerRow = Row(
-          children: [
-            Expanded(child: buildSlot(isPlan: true, ctrl: planCtrl)),
-            const SizedBox(width: 4),
-            Expanded(child: buildSlot(isPlan: false, ctrl: retroCtrl)),
-          ],
-        );
-        break;
-    }
-
-    if (minute == 0) return innerRow;
-
-    final String label = DateFormat('h:mm a').format(entry.startTime);
-    final TextStyle labelStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ) ??
-        const TextStyle(fontSize: 13, fontWeight: FontWeight.w600);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 16.0, top: 8, bottom: 6, right: 8),
+        return IntrinsicHeight(
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(label, style: labelStyle),
-              if (widget.viewMode == TimelineViewMode.compare) ...[
-                 const Expanded(child: SizedBox()),
-                 _buildCopyButton(entry),
-                 const Expanded(child: SizedBox()),
-                 // Balance visual weight
-                 const SizedBox(width: 48), 
-              ] else 
-                 const Spacer(),
+              Expanded(child: buildSlot(isPlan: true, ctrl: planCtrl)),
+              
+              // INLINE COPY BUTTON
+              Container(
+                 width: 32,
+                 alignment: Alignment.center,
+                 decoration: BoxDecoration(
+                   color: Theme.of(context).colorScheme.surfaceContainerLow,
+                   border: Border.symmetric(horizontal: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3))),
+                 ),
+                 child: IconButton(
+                    icon: Icon(Icons.arrow_forward, size: 16, color: Theme.of(context).colorScheme.primary),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                    tooltip: 'Copy Plan to Actual',
+                    onPressed: () => widget.onUpdateEntry(entry, entry.planactivity, entry.planNotes, isPlan: false),
+                 ),
+              ),
+
+              Expanded(child: buildSlot(isPlan: false, ctrl: retroCtrl)),
             ],
           ),
-        ),
-        innerRow,
-      ],
-    );
+        );
+    }
   }
 }
