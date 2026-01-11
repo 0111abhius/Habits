@@ -265,7 +265,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
       final bool isCompare = widget.viewMode == TimelineViewMode.compare;
       // In compare mode, we have very limited width (approx 50% - gutter - margins).
       // We drastically reduce items to prevent overflow.
-      final int quickCount = isCompare ? 0 : 3;
+      final int quickCount = isCompare ? 0 : (MediaQuery.of(context).size.width < 400 ? 2 : 3);
       final double maxLabelWidth = isCompare ? 70.0 : 130.0;
 
       return Container(
@@ -282,35 +282,42 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
           children: [
             if (isEmpty) ...[
               // Quick Picks Row
-              ...widget.suggestedActivities.take(quickCount).map((act) {
-                final emoji = kActivityEmoji[act];
-                final String? firstChar = (emoji == null && act.isNotEmpty) ? act.characters.first : null;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6, top: 2),
-                  child: InkWell(
-                    onTap: () {
-                      widget.onUpdateRecentActivity(act);
-                      widget.onUpdateEntry(entry, act, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
-                    },
-                    borderRadius: BorderRadius.circular(20),
-                    child: Tooltip(
-                      message: act,
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                           color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                           shape: BoxShape.circle,
+                ...widget.suggestedActivities.take(quickCount).map((act) {
+                  final emoji = kActivityEmoji[act];
+                  // Determine max width based on screen size
+                  final double screenWidth = MediaQuery.of(context).size.width;
+                  final bool isWide = screenWidth > 600;
+                  final double maxWidth = isWide ? 140 : 75;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6, top: 2),
+                    child: InkWell(
+                      onTap: () {
+                        widget.onUpdateRecentActivity(act);
+                        widget.onUpdateEntry(entry, act, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Tooltip(
+                        message: act,
+                        child: Container(
+                          constraints: BoxConstraints(maxWidth: maxWidth),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                             color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                             borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            emoji != null ? '$emoji $act' : act,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          ),
                         ),
-                        child: emoji != null
-                           ? Text(emoji, style: const TextStyle(fontSize: 18))
-                           : Text(firstChar ?? '?', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                }),
               
               Padding(
                 padding: const EdgeInsets.only(right: 4, top: 2), // slightly tighter padding
