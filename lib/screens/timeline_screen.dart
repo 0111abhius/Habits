@@ -16,6 +16,9 @@ import '../widgets/timeline_hour_tile.dart';
 import 'day_planning_assistant.dart';
 import '../models/timeline_view_mode.dart';
 import '../widgets/timeline_view_header.dart';
+import '../widgets/day_overview_dialog.dart';
+import '../utils/ai_service.dart';
+import 'dart:convert';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -73,6 +76,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
   // Historical data for suggestions
   List<TimelineEntry> _yesterdayEntries = [];
   List<TimelineEntry> _lastWeekEntries = [];
+
+  // Overview Data
+  Map<String, dynamic>? _dayOverviewData;
+  bool _isGeneratingOverview = false;
 
   @override
   void initState() {
@@ -450,27 +457,70 @@ class _TimelineScreenState extends State<TimelineScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: MediaQuery.of(context).size.width < 400
-                    ? IconButton(
-                        icon: const Icon(Icons.auto_awesome),
-                        tooltip: 'AI Plan',
-                        onPressed: () async {
-                          await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
-                          await _loadUserSettings();
-                        },
-                      )
-                    : OutlinedButton.icon(
-                        onPressed: () async {
-                          await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
-                          await _loadUserSettings();
-                        },
-                        icon: const Icon(Icons.auto_awesome, size: 18),
-                        label: const Text('AI Plan'),
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          side: BorderSide(color: Theme.of(context).primaryColor),
-                        ),
-                      ),
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _dayCompleteNotifier,
+                  builder: (context, done, _) {
+                    if (done) {
+                      // Show AI Overview
+                      return MediaQuery.of(context).size.width < 400
+                          ? IconButton(
+                              icon: _isGeneratingOverview 
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                                  : const Icon(Icons.summarize),
+                              tooltip: 'AI Overview',
+                              onPressed: () {
+                                if (_isGeneratingOverview) return;
+                                if (_dayOverviewData != null) {
+                                  DayOverviewDialog.show(context, _dayOverviewData!);
+                                } else {
+                                  _generateDayOverview();
+                                }
+                              },
+                            )
+                          : OutlinedButton.icon(
+                              onPressed: () {
+                                if (_isGeneratingOverview) return;
+                                if (_dayOverviewData != null) {
+                                  DayOverviewDialog.show(context, _dayOverviewData!);
+                                } else {
+                                  _generateDayOverview();
+                                }
+                              },
+                              icon: _isGeneratingOverview 
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                                  : const Icon(Icons.summarize, size: 18),
+                              label: Text(_isGeneratingOverview ? 'Processing' : 'AI Overview'),
+                              style: OutlinedButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                side: BorderSide(color: Theme.of(context).primaryColor),
+                              ),
+                            );
+                    } else {
+                      // Show AI Plan
+                      return MediaQuery.of(context).size.width < 400
+                          ? IconButton(
+                              icon: const Icon(Icons.auto_awesome),
+                              tooltip: 'AI Plan',
+                              onPressed: () async {
+                                await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                                await _loadUserSettings();
+                              },
+                            )
+                          : OutlinedButton.icon(
+                              onPressed: () async {
+                                await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                                await _loadUserSettings();
+                              },
+                              icon: const Icon(Icons.auto_awesome, size: 18),
+                              label: const Text('AI Plan'),
+                              style: OutlinedButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                side: BorderSide(color: Theme.of(context).primaryColor),
+                              ),
+                            );
+                    }
+                  }
+                ),
               ),
               IconButton(
                 icon: const Icon(Icons.access_time),
@@ -1054,6 +1104,68 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final uid=FirebaseAuth.instance.currentUser?.uid; if(uid==null) return;
     final doc=await getFirestore().collection('daily_logs').doc(uid).collection('logs').doc(_dateStr(selectedDate)).get();
     _dayCompleteNotifier.value = doc.exists && (doc.data()?['complete']==true);
+    
+    if (doc.exists && doc.data() != null && doc.data()!.containsKey('overview')) {
+      final data = doc.data()!['overview'];
+      // Ensure it's a Map
+      if (data is Map) {
+        _dayOverviewData = Map<String, dynamic>.from(data);
+      } else {
+        _dayOverviewData = null;
+      }
+    } else {
+      _dayOverviewData = null;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _generateDayOverview() async {
+    if (_isGeneratingOverview) return;
+    setState(() => _isGeneratingOverview = true);
+    
+    try {
+      // Collect logs
+      final logs = _cachedEntries.map((e) {
+         final time = DateFormat('HH:mm').format(e.startTime);
+         final act = e.activity.isNotEmpty ? e.activity : 'No activity';
+         return '$time - $act ${e.notes.isNotEmpty ? "(${e.notes})" : ""}';
+      }).toList();
+
+      final jsonStr = await AIService().generateDayOverview(
+          date: _dateStr(selectedDate), 
+          logs: logs
+      );
+      
+      final data = jsonDecode(jsonStr);
+      if (data is! Map) throw Exception('Invalid format');
+
+      // Save to DB
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+          await getFirestore()
+              .collection('daily_logs')
+              .doc(uid)
+              .collection('logs')
+              .doc(_dateStr(selectedDate))
+              .set({'overview': data}, SetOptions(merge: true));
+      }
+
+      if (mounted) {
+           setState(() {
+              _dayOverviewData = Map<String, dynamic>.from(data);
+              _isGeneratingOverview = false;
+           });
+           // Automatically show the dialog once ready if user is still on this screen
+           if (_dayComplete) { // Double check
+             DayOverviewDialog.show(context, _dayOverviewData!);
+           }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isGeneratingOverview = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to generate overview: $e')));
+      }
+    }
   }
 
   Future<void> _setDayComplete(bool val) async {
@@ -1077,6 +1189,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
           'lastUpdated': FieldValue.serverTimestamp(),
         });
         _loggedDates.add(_dateStr(selectedDate));
+        // Trigger generic overview if not present
+        if (_dayOverviewData == null) {
+             _generateDayOverview();
+        }
       } else {
         await ref.delete();
         _loggedDates.remove(_dateStr(selectedDate));

@@ -252,4 +252,41 @@ Only include the tasks I asked you to schedule. Do not add arbitrary new activit
       return '{"error": "$e"}';
     }
   }
+
+  Future<String> generateDayOverview({
+    required String date,
+    required List<String> logs,
+  }) async {
+    final prompt = '''
+You are a supportive productivity coach.
+I have completed my day ($date). Here is the log of what I did:
+
+${logs.join('\n')}
+
+Please provide a "Daily Overview":
+1. A score out of 10 based on productivity, balance, and healthy habits.
+2. A brief, encouraging summary of the day.
+3. 2-3 highlights or "wins".
+4. 1 suggestion for tomorrow.
+
+Return strict JSON:
+{
+  "score": 8,
+  "summary": "Great day! You...",
+  "highlights": ["...","..."],
+  "suggestion": "Try to..."
+}
+Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
+''';
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await _model.generateContent(content);
+      var text = response.text ?? '{}';
+      text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+      return text;
+    } catch (e) {
+      return '{"error": "$e"}';
+    }
+  }
 }
