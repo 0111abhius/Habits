@@ -145,7 +145,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
   List<String> _getSuggestionsForHour(int hour) {
     // 1. Last week same hour
     // 2. Yesterday same hour
-    // 3. Fallback to global recents
+    // 3. MOST Recent singular activity
+    // 4. Backfill from Recents to ensure 3 options if history is missing
     
     final Set<String> candidates = {};
     
@@ -167,17 +168,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
       candidates.add(yesterdayEntry.activity);
     }
     
-    // Prioritize context candidates first, then fill remainder with global recents
-    final List<String> result = candidates.toList();
-    
+    // Add ONLY the single most recent activity if available
+    if (_recentActivities.isNotEmpty) {
+       candidates.add(_recentActivities.first);
+    }
+
+    // If we still don't have 3, backfill with other recents
     for (final act in _recentActivities) {
-      if (result.length >= 3) break;
-      if (!result.contains(act)) {
-        result.add(act);
-      }
+      if (candidates.length >= 3) break;
+      candidates.add(act);
     }
     
-    return result;
+    return candidates.toList();
   }
 
   Future<void> _reconcileSleepEntriesForSelectedDate() async {
@@ -767,11 +769,21 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 onPromptCustomActivity: () => _promptCustomActivity(context),
                 onUpdateRecentActivity: (act) {
                     bool changed = false;
-                    if (!_recentActivities.contains(act)) {
-                      _recentActivities.insert(0, act);
-                      if (_recentActivities.length > 8) _recentActivities.removeLast();
-                      changed = true;
+                    // If it's already in the list, remove it so we can push it to the top
+                    if (_recentActivities.contains(act)) {
+                       // Only mark changed if it wasn't already at the top
+                       if (_recentActivities.indexOf(act) != 0) {
+                         _recentActivities.remove(act);
+                         _recentActivities.insert(0, act);
+                         changed = true;
+                       }
+                    } else {
+                       // New addition
+                       _recentActivities.insert(0, act);
+                       if (_recentActivities.length > 8) _recentActivities.removeLast();
+                       changed = true;
                     }
+
                     if (!_activities.contains(act) && !_archivedActivities.contains(act)) {
                        _activities.add(act);
                        _dedupCats(); 
