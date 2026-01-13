@@ -791,7 +791,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     }
                     if (changed) {
                       setState(() {});
-                      _saveSettings();
+                      _saveSettings(showConfirmation: false);
                     }
                 },
                 key00: key00,
@@ -937,7 +937,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   // _showActivitiesDialog removed. Use ActivitiesManagementScreen instead.
 
-  Future<void> _saveSettings({bool refreshTimeline = true}) async {
+  Future<void> _saveSettings({bool refreshTimeline = true, bool showConfirmation = true}) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -987,13 +987,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
         await _reconcileSleepEntriesForSelectedDate();
       }
 
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('Settings saved')),
-      );
+      if (showConfirmation) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('Settings saved')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('Unable to save settings. Please try again later.')),
-      );
+      if (showConfirmation) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('Unable to save settings. Please try again later.')),
+        );
+      }
     }
   }
 

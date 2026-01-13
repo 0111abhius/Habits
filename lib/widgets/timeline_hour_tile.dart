@@ -292,6 +292,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
                   final double maxWidth = isWide ? 140 : 75;
 
                   return Padding(
+                    key: ValueKey('suggestion_$act'),
                     padding: const EdgeInsets.only(right: 6, top: 2),
                     child: InkWell(
                       onTap: () {
