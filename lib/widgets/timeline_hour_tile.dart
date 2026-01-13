@@ -119,8 +119,6 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     });
   }
 
-  Color _planBg(BuildContext context) => Color.alphaBlend(Colors.indigo.withOpacity(0.04), Theme.of(context).colorScheme.surface);
-  Color _retroBg(BuildContext context) => Color.alphaBlend(Colors.orange.withOpacity(0.04), Theme.of(context).colorScheme.surface);
 
   String _displayLabel(String act) => displayActivity(act);
 
@@ -270,11 +268,15 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
 
       return Container(
         decoration: BoxDecoration(
-          color: isPlan 
-            ? Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3)
-            : Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.1),
-          // No rounded corners needed internally for seamless look, 
-          // or maybe just slight ones? simpler is cleaner.
+          color: isPlan
+              ? Colors.indigo.withOpacity(0.05)
+              : Colors.teal.withOpacity(0.05),
+          border: Border.all(
+            color: isPlan
+                ? Colors.indigo.withOpacity(0.2)
+                : Colors.teal.withOpacity(0.2),
+          ),
+          borderRadius: BorderRadius.circular(8),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8), // Reduced horizontal padding
         child: Row(
