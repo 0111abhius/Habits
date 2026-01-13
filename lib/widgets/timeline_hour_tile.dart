@@ -16,8 +16,10 @@ class TimelineHourTile extends StatefulWidget {
   final Future<void> Function(TimelineEntry entry, String activity, String notes, {bool isPlan}) onUpdateEntry;
   // We pass these down to reuse the picker logic
   final List<String> availableActivities;
-  final List<String> suggestedActivities;
-  final List<String> recentActivities;
+  // History candidates (Yesterday/LastWeek same hour) not including general recents
+  final List<String> historyActivities;
+  // Live list of general recent activities
+  final ValueNotifier<List<String>> recentActivitiesNotifier;
   final Future<String?> Function() onPromptCustomActivity;
   final Function(String) onUpdateRecentActivity;
 
@@ -35,8 +37,8 @@ class TimelineHourTile extends StatefulWidget {
     required this.onUpdateEntry,
 
     required this.availableActivities,
-    required this.suggestedActivities,
-    required this.recentActivities,
+    required this.historyActivities,
+    required this.recentActivitiesNotifier,
     required this.onPromptCustomActivity,
     required this.onUpdateRecentActivity,
     this.key00,
@@ -284,43 +286,65 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
           children: [
             if (isEmpty) ...[
               // Quick Picks Row
-                ...widget.suggestedActivities.take(quickCount).map((act) {
-                  final emoji = kActivityEmoji[act];
-                  // Determine max width based on screen size
-                  final double screenWidth = MediaQuery.of(context).size.width;
-                  final bool isWide = screenWidth > 600;
-                  final double maxWidth = isWide ? 140 : 75;
+              ValueListenableBuilder<List<String>>(
+                valueListenable: widget.recentActivitiesNotifier,
+                builder: (context, recents, _) {
+                  // Merge:
+                  // 1. History (Yesterday/LastWeek)
+                  // 2. Then fill remaining slots from Recents
+                  final Set<String> candidates = {};
+                  // history first
+                  candidates.addAll(widget.historyActivities);
+                  // then recents until we have enough
+                  for (final r in recents) {
+                    if (candidates.length >= 3) break;
+                    if (!candidates.contains(r)) candidates.add(r);
+                  }
+                  
+                  final suggestions = candidates.take(quickCount).toList();
 
-                  return Padding(
-                    key: ValueKey('suggestion_$act'),
-                    padding: const EdgeInsets.only(right: 6, top: 2),
-                    child: InkWell(
-                      onTap: () {
-                        widget.onUpdateRecentActivity(act);
-                        widget.onUpdateEntry(entry, act, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Tooltip(
-                        message: act,
-                        child: Container(
-                          constraints: BoxConstraints(maxWidth: maxWidth),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                             color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                             borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            emoji != null ? '$emoji $act' : act,
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: suggestions.map((act) {
+                      final emoji = kActivityEmoji[act];
+                      // Determine max width based on screen size
+                      final double screenWidth = MediaQuery.of(context).size.width;
+                      final bool isWide = screenWidth > 600;
+                      final double maxWidth = isWide ? 140 : 75;
+
+                      return Padding(
+                        key: ValueKey('suggestion_$act'),
+                        padding: const EdgeInsets.only(right: 6, top: 2),
+                        child: InkWell(
+                          onTap: () {
+                            widget.onUpdateRecentActivity(act);
+                            widget.onUpdateEntry(entry, act, isPlan ? entry.planNotes : entry.notes, isPlan: isPlan);
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: Tooltip(
+                            message: act,
+                            child: Container(
+                              constraints: BoxConstraints(maxWidth: maxWidth),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                emoji != null ? '$emoji $act' : act,
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
+                      );
+                    }).toList(),
                   );
-                }),
+                },
+              ),
               
               Padding(
                 padding: const EdgeInsets.only(right: 4, top: 2), // slightly tighter padding
@@ -329,7 +353,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
                     final picked = await showActivityPicker(
                       context: context,
                       allActivities: available,
-                      recent: widget.recentActivities,
+                      recent: widget.recentActivitiesNotifier.value,
                     );
                     if (picked != null) {
                        if (picked == '__custom') {
@@ -369,7 +393,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
                     final picked = await showActivityPicker(
                       context: context,
                       allActivities: available,
-                      recent: widget.recentActivities,
+                      recent: widget.recentActivitiesNotifier.value,
                     );
                     if (picked == null) return;
                     if (picked == '__custom') {

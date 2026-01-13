@@ -72,6 +72,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   Set<String> _loggedDates = {};
   late Stream<QuerySnapshot> _currentStream;
+  
+  final ValueNotifier<List<String>> _recentActivitiesNotifier = ValueNotifier([]);
 
   // Historical data for suggestions
   List<TimelineEntry> _yesterdayEntries = [];
@@ -143,10 +145,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 
   List<String> _getSuggestionsForHour(int hour) {
-    // 1. Last week same hour
-    // 2. Yesterday same hour
-    // 3. MOST Recent singular activity
-    // 4. Backfill from Recents to ensure 3 options if history is missing
+    // Return only explicit history matches (Yesterday/LastWeek same hour)
+    // The Tile handles backfilling from general recents.
     
     final Set<String> candidates = {};
     
@@ -166,17 +166,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
     );
     if (yesterdayEntry.activity.isNotEmpty) {
       candidates.add(yesterdayEntry.activity);
-    }
-    
-    // Add ONLY the single most recent activity if available
-    if (_recentActivities.isNotEmpty) {
-       candidates.add(_recentActivities.first);
-    }
-
-    // If we still don't have 3, backfill with other recents
-    for (final act in _recentActivities) {
-      if (candidates.length >= 3) break;
-      candidates.add(act);
     }
     
     return candidates.toList();
@@ -263,6 +252,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
           _archivedActivities = List<String>.from(data['archivedActivities'] ?? []);
           _subActivities = (data['subActivities'] as Map<String, dynamic>? ?? {})
               .map((k, v) => MapEntry(k, List<String>.from(v as List)));
+          _recentActivitiesNotifier.value = List.from(_recentActivities);
           _dedupCats();
           // ensure 'Sleep' is always present
           if (!_activities.contains('Sleep')) {
@@ -289,6 +279,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
           _activities = List.from(kDefaultActivities);
           _archivedActivities = [];
           _recentActivities = [];
+          _recentActivitiesNotifier.value = [];
           _dedupCats();
         });
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
@@ -764,8 +755,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 onToggleSplit: () => _toggleSplit(hour),
                 onUpdateEntry: _updateEntry,
                 availableActivities: _flattenCats(),
-                suggestedActivities: _getSuggestionsForHour(hour),
-                recentActivities: _recentActivities,
+                historyActivities: _getSuggestionsForHour(hour),
+                recentActivitiesNotifier: _recentActivitiesNotifier,
                 onPromptCustomActivity: () => _promptCustomActivity(context),
                 onUpdateRecentActivity: (act) {
                     bool changed = false;
@@ -790,8 +781,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
                        changed = true;
                     }
                     if (changed) {
-                      setState(() {});
-                      _saveSettings(showConfirmation: false);
+                      _recentActivitiesNotifier.value = List.from(_recentActivities);
+                      _saveSettings(refreshTimeline: false, showConfirmation: false);
                     }
                 },
                 key00: key00,
