@@ -27,7 +27,7 @@ class TimelineScreen extends StatefulWidget {
   State<TimelineScreen> createState() => _TimelineScreenState();
 }
 
-class _TimelineScreenState extends State<TimelineScreen> {
+class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObserver {
   DateTime selectedDate = DateTime.now();
   static const List<String> _protectedActivities = ['Sleep'];
   List<String> _activities = List.from(kDefaultActivities);
@@ -86,6 +86,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
     _initStream();
     _scrollController = ScrollController(initialScrollOffset: _offsetCache[_currentDateKey] ?? 0)
@@ -94,21 +95,66 @@ class _TimelineScreenState extends State<TimelineScreen> {
       });
     _loadUserSettings();
     _loadDayComplete();
+     // We invoke this twice in the original code, keeping it for safety/consistency with existing logic
     _loadUserSettings();
     _loadDayComplete();
     _loadLoggedDates();
     _loadHistoricalData();
+    
+    // Check for day changes periodically (every minute) to handle user staying in app across midnight
+    _dayCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) => _checkForDayChange());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dayCheckTimer?.cancel();
     _scrollController.dispose();
     _sleepTimeController.dispose();
     _wakeTimeController.dispose();
-
-
     _pendingScrollOffset=null;
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkForDayChange();
+      // Also refresh settings/data that might have changed elsewhere or need refreshing
+      _initStream(); 
+      _loadUserSettings();
+    }
+  }
+
+  Timer? _dayCheckTimer;
+
+  void _checkForDayChange() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selectedDiff = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    
+    // Check if the displayed date is "Yesterday" relative to real-world Today.
+    // This implies the day rolled over.
+    if (selectedDiff == today.subtract(const Duration(days: 1))) {
+      // Auto-advance to Today
+       setState(() {
+         _blockKeys.clear();
+         selectedDate = today;
+         _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+         _initStream();
+         _loadDayComplete();
+         _loadHistoricalData();
+         // Reset scroll to wake time since it's a "new" day view
+         _pendingScrollOffset = null;
+         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
+       });
+    } else if (selectedDiff == today) {
+       // If we are already on today, just triggering setState (via other methods or explicit) 
+       // updates the UI relative time labels if needed, but setState here is safe too.
+       // However, we only need to force update if something stale is visible.
+       // Minimal refresh:
+       if (mounted) setState(() {});
+    }
   }
 
   // Helper to parse 'HH:mm' strings to TimeOfDay
