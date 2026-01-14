@@ -271,12 +271,12 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
       return Container(
         decoration: BoxDecoration(
           color: isPlan
-              ? Colors.indigo.withOpacity(0.05)
-              : Colors.teal.withOpacity(0.05),
+              ? Colors.blue.withOpacity(0.05) // Plan: Blue
+              : Colors.green.withOpacity(0.05), // Actual: Green (Matches Theme)
           border: Border.all(
             color: isPlan
-                ? Colors.indigo.withOpacity(0.2)
-                : Colors.teal.withOpacity(0.2),
+                ? Colors.blue.withOpacity(0.2)
+                : Colors.green.withOpacity(0.2),
           ),
           borderRadius: BorderRadius.circular(8),
         ),

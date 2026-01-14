@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'profile_screen.dart';
 import '../models/timeline_entry.dart';
 import '../widgets/calendar_strip.dart';
 import '../widgets/habit_tracker.dart';
@@ -566,55 +567,45 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                 tooltip: 'Jump to Now',
                 onPressed: _scrollToNow,
               ),
-              PopupMenuButton<String>(
-                tooltip: 'Customize',
-                onSelected: (value) async {
-                  switch (value) {
-                    case 'template':
-                      await Navigator.pushNamed(context, '/template');
-                      if (mounted) setState(() {});
-                      break;
-                    case 'sleep':
-                      _showSleepDialog(context);
-                      break;
-                    case 'signout':
-                      await FirebaseAuth.instance.signOut();
-                      try{ await GoogleSignIn().signOut(); } catch(_){}
-                      if (mounted) {
-                        Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(builder: (_) => const LoginScreen()),
-                          (route) => false,
-                        );
-                      }
-                      break;
-                  }
+IconButton(
+                icon: const Icon(Icons.copy_all),
+                tooltip: 'Use Template',
+                onPressed: () async {
+                  await Navigator.pushNamed(context, '/template');
+                  if (mounted) setState(() {});
                 },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'template',
-                    child: ListTile(
-                      leading: Icon(Icons.copy_all),
-                      title: Text('Use Template'),
-                      contentPadding: EdgeInsets.zero,
+              ),
+              StreamBuilder<User?>(
+                stream: FirebaseAuth.instance.authStateChanges(),
+                builder: (context, snapshot) {
+                  final user = snapshot.data;
+                  final String initials = (user?.displayName?.isNotEmpty ?? false)
+                      ? user!.displayName!.trim().split(' ').take(2).map((e) => e[0].toUpperCase()).join()
+                      : '?';
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 8.0, right: 16.0),
+                    child: GestureDetector(
+                      onTap: () async {
+                        await Navigator.push(
+                         context,
+                         MaterialPageRoute(builder: (context) => const ProfileScreen()),
+                        );
+                        if (mounted) {
+                          _loadUserSettings();
+                          _initStream();
+                        }
+                      },
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: Theme.of(context).primaryColor,
+                        backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                        child: user?.photoURL == null
+                            ? Text(initials, style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold))
+                            : null,
+                      ),
                     ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'sleep',
-                    child: ListTile(
-                      leading: Icon(Icons.bedtime),
-                      title: Text('Sleep timings'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'signout',
-                    child: ListTile(
-                      leading: Icon(Icons.logout),
-                      title: Text('Sign out'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
+                  );
+                },
               ),
             ],
           ),
@@ -900,77 +891,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     }
   }
 
-  Future<void> _showSleepDialog(BuildContext context) async {
-    TimeOfDay? dialogSleep = sleepTime ?? (_sleepTimeController.text.isNotEmpty ? _parseTime(_sleepTimeController.text) : const TimeOfDay(hour: 23, minute: 0));
-    TimeOfDay? dialogWake = wakeTime ?? (_wakeTimeController.text.isNotEmpty ? _parseTime(_wakeTimeController.text) : const TimeOfDay(hour: 7, minute: 0));
 
-    final result = await showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Sleep Timings'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Sleep Time'),
-                      TextButton(
-                        onPressed: () async {
-                          final t = await showTimePicker(
-                            context: context,
-                            initialTime: dialogSleep ?? const TimeOfDay(hour: 23, minute: 0),
-                          );
-                          if (t != null) {
-                            setDialogState(() => dialogSleep = t);
-                            _sleepTimeController.text = _fmt24(t);
-                            await _saveSettings(refreshTimeline: true);
-                          }
-                        },
-                        child: Text(dialogSleep?.format(context) ?? 'Set'),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Wake Time'),
-                      TextButton(
-                        onPressed: () async {
-                          final t = await showTimePicker(
-                            context: context,
-                            initialTime: dialogWake ?? const TimeOfDay(hour: 7, minute: 0),
-                          );
-                          if (t != null) {
-                            setDialogState(() => dialogWake = t);
-                            _wakeTimeController.text = _fmt24(t);
-                            await _saveSettings(refreshTimeline: true);
-                          }
-                        },
-                        child: Text(dialogWake?.format(context) ?? 'Set'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    // Rebuild timeline to reflect any activity changes made inside the dialog
-    if (mounted && result != null) {
-      setState(() {});
-    }
-  }
 
   // _showActivitiesDialog removed. Use ActivitiesManagementScreen instead.
 
