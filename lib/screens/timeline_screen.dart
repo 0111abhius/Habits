@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
+import 'social_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'profile_screen.dart';
 import '../models/timeline_entry.dart';
@@ -86,8 +87,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   List<TimelineEntry> _lastWeekEntries = [];
 
   // Overview Data
-  Map<String, dynamic>? _dayOverviewData;
-  bool _isGeneratingOverview = false;
+
   DateTime? _lastPlannedAt;
   DailyScore? _dailyScore;
   bool _isCalculatingScore = false;
@@ -574,6 +574,11 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                     }
                   }
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.people),
+                tooltip: 'Community',
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialScreen())),
               ),
               IconButton(
                 icon: const Icon(Icons.access_time),
@@ -1138,15 +1143,7 @@ IconButton(
         _lastPlannedAt = null;
       }
 
-      if (doc.data()!.containsKey('overview')) {
-        final data = doc.data()!['overview'];
-        // Ensure it's a Map
-        if (data is Map) {
-          _dayOverviewData = Map<String, dynamic>.from(data);
-        } else {
-          _dayOverviewData = null;
-        }
-      }
+
       if (doc.data()!.containsKey('scoreDetails')) {
         try {
           // Add doc ID if needed, or just map
@@ -1174,7 +1171,6 @@ IconButton(
     } else {
       _dayCompleteNotifier.value = false;
       _lastPlannedAt = null;
-      _dayOverviewData = null;
       _dailyScore = null;
     }
     if (mounted) setState(() {});
@@ -1183,7 +1179,10 @@ IconButton(
   Future<void> _calculateAndShowScore() async {
     if (_isCalculatingScore) return;
     if (_dailyScore != null) {
-      DayScoreDialog.show(context, _dailyScore!);
+      DayScoreDialog.show(context, _dailyScore!, onRecalculate: () {
+        setState(() => _dailyScore = null); // Clear cache
+        _calculateAndShowScore(); // Re-run
+      });
       return;
     }
     
@@ -1238,54 +1237,7 @@ IconButton(
     }
   }
 
-  Future<void> _generateDayOverview() async {
-    if (_isGeneratingOverview) return;
-    setState(() => _isGeneratingOverview = true);
-    
-    try {
-      // Collect logs
-      final logs = _cachedEntries.map((e) {
-         final time = DateFormat('HH:mm').format(e.startTime);
-         final act = e.activity.isNotEmpty ? e.activity : 'No activity';
-         return '$time - $act ${e.notes.isNotEmpty ? "(${e.notes})" : ""}';
-      }).toList();
 
-      final jsonStr = await AIService().generateDayOverview(
-          date: _dateStr(selectedDate), 
-          logs: logs
-      );
-      
-      final data = jsonDecode(jsonStr);
-      if (data is! Map) throw Exception('Invalid format');
-
-      // Save to DB
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid != null) {
-          await getFirestore()
-              .collection('daily_logs')
-              .doc(uid)
-              .collection('logs')
-              .doc(_dateStr(selectedDate))
-              .set({'overview': data}, SetOptions(merge: true));
-      }
-
-      if (mounted) {
-           setState(() {
-              _dayOverviewData = Map<String, dynamic>.from(data);
-              _isGeneratingOverview = false;
-           });
-           // Automatically show the dialog once ready if user is still on this screen
-           if (_dayComplete) { // Double check
-             DayOverviewDialog.show(context, _dayOverviewData!);
-           }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isGeneratingOverview = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to generate overview: $e')));
-      }
-    }
-  }
 
   Future<void> _setDayComplete(bool val) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -1309,9 +1261,11 @@ IconButton(
         });
         _loggedDates.add(_dateStr(selectedDate));
         // Trigger generic overview if not present
-        if (_dayOverviewData == null) {
-             _generateDayOverview();
-        }
+            // Trigger new score calc if not present?
+            // Actually _calculateAndShowScore handles it manually via button.
+            // We shouldn't auto-trigger the OLD one.
+            // if (_dailyScore == null) _calculateAndShowScore(); // Optional: Auto-trigger new score?
+            // User requested manual trigger usually. Let's just remove the old call.
       } else {
         await ref.delete();
         _loggedDates.remove(_dateStr(selectedDate));

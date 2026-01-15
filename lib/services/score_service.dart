@@ -4,6 +4,7 @@ import '../models/user_settings.dart';
 import '../models/daily_log.dart';
 import '../models/daily_score.dart';
 import '../utils/ai_service.dart';
+import 'social_service.dart';
 
 class ScoreService {
   Future<DailyScore> calculateDailyScore({
@@ -39,7 +40,7 @@ class ScoreService {
         
     int finalScore = (total / 100).round();
 
-    return DailyScore(
+    final score = DailyScore(
       userId: userId,
       date: date,
       totalScore: finalScore,
@@ -53,6 +54,11 @@ class ScoreService {
       coachTip: tip,
       computedAt: DateTime.now(),
     );
+
+    // Sync to Social Profile (Fire & Forget)
+    SocialService().updateSocialStats(score);
+
+    return score;
   }
 
   Future<Map<String, dynamic>> _calculateGoalAnalysisAI(List<TimelineEntry> entries, String goal) async {

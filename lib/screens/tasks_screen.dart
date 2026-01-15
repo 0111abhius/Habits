@@ -673,6 +673,7 @@ class _TasksScreenState extends State<TasksScreen> {
           ],
         ),
         floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'tasks_fab',
             onPressed: () => _showTaskBottomSheet(),
             label: const Text('New Task'),
             icon: const Icon(Icons.add),

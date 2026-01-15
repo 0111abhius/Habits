@@ -3,13 +3,14 @@ import '../models/daily_score.dart';
 
 class DayScoreDialog extends StatelessWidget {
   final DailyScore score;
+  final VoidCallback? onRecalculate;
 
-  const DayScoreDialog({super.key, required this.score});
+  const DayScoreDialog({super.key, required this.score, this.onRecalculate});
 
-  static Future<void> show(BuildContext context, DailyScore score) {
+  static Future<void> show(BuildContext context, DailyScore score, {VoidCallback? onRecalculate}) {
     return showDialog(
       context: context,
-      builder: (context) => DayScoreDialog(score: score),
+      builder: (context) => DayScoreDialog(score: score, onRecalculate: onRecalculate),
     );
   }
 
@@ -104,6 +105,15 @@ class DayScoreDialog extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
               child: const Text('Close'),
             ),
+            if (onRecalculate != null)
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  onRecalculate!();
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Recalculate Score'),
+              ),
           ],
         ),
       ),
