@@ -8,6 +8,8 @@ import '../utils/ai_service.dart';
 import '../models/timeline_entry.dart';
 import '../main.dart';
 import '../models/habit.dart';
+import '../models/daily_score.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 import 'dart:math' as math;
 import '../utils/ai_service.dart';
@@ -41,8 +43,9 @@ class _AnalyticsData {
   final Map<String, double> activityAvg; // hours per day
   final List<_HabitStat> habits;
   final int days;
+  final List<DailyScore> scores;
 
-  _AnalyticsData({required this.activityAvg, required this.habits, required this.days});
+  _AnalyticsData({required this.activityAvg, required this.habits, required this.days, required this.scores});
 }
 
 class AnalyticsScreen extends StatefulWidget {
@@ -72,7 +75,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Future<_AnalyticsData> _fetchData() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return _AnalyticsData(activityAvg: {}, habits: [], days: 0);
+    if (user == null) return _AnalyticsData(activityAvg: {}, habits: [], days: 0, scores: []);
 
     DateTime start;
     DateTime end;
@@ -92,7 +95,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         start = _startOfMonth(end); // first day of current month
         break;
       case AnalyticsRange.custom:
-        if (_customRange == null) return _AnalyticsData(activityAvg: {}, habits: [], days: 0);
+        if (_customRange == null) return _AnalyticsData(activityAvg: {}, habits: [], days: 0, scores: []);
         start = _customRange!.start;
         end = _customRange!.end;
         break;
@@ -120,8 +123,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     };
 
     final days = completedDates.length;
+    
+    // Parse scores
+    final List<DailyScore> scores = [];
+    for (final doc in completedSnap.docs) {
+      if (doc.data().containsKey('scoreDetails')) {
+        try {
+          final sMap = doc['scoreDetails'] as Map<String, dynamic>;
+          scores.add(DailyScore(
+            userId: sMap['userId'] ?? user.uid,
+            date: (sMap['date'] as Timestamp).toDate(),
+            totalScore: sMap['totalScore'] ?? 0,
+            breakdown: Map<String, int>.from(sMap['breakdown'] ?? {}),
+            aiGoalAnalysis: sMap['aiGoalAnalysis'] ?? '',
+            coachTip: sMap['coachTip'] ?? '',
+            computedAt: (sMap['computedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          ));
+        } catch (_) {}
+      }
+    }
+    scores.sort((a,b) => a.date.compareTo(b.date));
+
     if(days==0){
-      return _AnalyticsData(activityAvg:{},habits:[],days:0);
+      return _AnalyticsData(activityAvg:{},habits:[],days:0, scores: []);
     }
 
     final startStr = dateFormat.format(start);
@@ -232,7 +256,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       }
     }
 
-    return _AnalyticsData(activityAvg: avgPerDay, habits: habitStats, days: days);
+    return _AnalyticsData(activityAvg: avgPerDay, habits: habitStats, days: days, scores: scores);
   }
 
   Future<String> _fetchDetailedLogs(DateTime start, DateTime end) async {
@@ -465,113 +489,262 @@ Pay special attention to where my 'Actual' activity differed from my 'Planned' a
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Analytics'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.auto_awesome),
-            tooltip: 'Get AI Insights',
-            onPressed: _showAIInsightsDialog,
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Analytics'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Overview'),
+              Tab(text: 'Motivation'),
+            ],
           ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButton<AnalyticsRange>(
-                    value: _selectedRange,
-                    items: const [
-                      DropdownMenuItem(value: AnalyticsRange.daily, child: Text('Daily')),
-                      DropdownMenuItem(value: AnalyticsRange.weekly, child: Text('Weekly')),
-                      DropdownMenuItem(value: AnalyticsRange.monthly, child: Text('Monthly')),
-                      DropdownMenuItem(value: AnalyticsRange.custom, child: Text('Custom')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _selectedRange = value;
-                          _refreshStats();
-                        });
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: _selectedRange == AnalyticsRange.custom ? _pickCustomRange : _pickAnchorDate,
-                  child: Text(_rangeLabel()),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: FutureBuilder<_AnalyticsData>(
-                future: _futureData,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return Center(child: Text('Error: ${snapshot.error}'));
-                  }
-                  final data = snapshot.data ?? _AnalyticsData(activityAvg: {}, habits: [], days: 0);
-                  if (data.activityAvg.isEmpty) {
-                    return const Center(child: Text('No data for selected range'));
-                  }
-
-                  final sorted = data.activityAvg.entries.toList()
-                    ..sort((a, b) => b.value.compareTo(a.value));
-
-                  final double totalHours = data.activityAvg.values.fold(0, (a, b) => a + b);
-
-                  return ListView(
-                    children: [
-
-                      ..._buildactivityTiles(sorted, totalHours),
-                      ListTile(
-                        title: const Text('Days logged in range'),
-                        trailing: Text('${data.days}'),
-                      ),
-                      const Divider(),
-                      ListTile(
-                        title: const Text('Avg Tracked Time / Day'),
-                        trailing: Text('${totalHours.toStringAsFixed(1)} h/day'),
-                      ),
-                      const SizedBox(height: 8),
-                      _buildAdditionalStats(data.activityAvg),
-                      if (data.habits.isNotEmpty) ...[
-                        const Divider(),
-                        const ListTile(title: Text('Habits')),
-                        ...data.habits.map((h) => h.type == HabitType.binary
-                            ? ListTile(
-                                title: Text(h.name),
-                                subtitle: LinearProgressIndicator(
-                                  value: h.completionRate,
-                                  minHeight: 6,
-                                ),
-                                trailing: Text('${(h.completionRate * 100).toStringAsFixed(0)}%'),
-                              )
-                            : ListTile(
-                                title: Text(h.name),
-                                trailing: Text('${h.avgCount.toStringAsFixed(1)} /day (${h.daysLogged}d)'),
-                              )),
-                      ],
-                    ],
-                  );
-                },
-              ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.auto_awesome),
+              tooltip: 'Get AI Insights',
+              onPressed: _showAIInsightsDialog,
             ),
           ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButton<AnalyticsRange>(
+                      value: _selectedRange,
+                      items: const [
+                        DropdownMenuItem(value: AnalyticsRange.daily, child: Text('Daily')),
+                        DropdownMenuItem(value: AnalyticsRange.weekly, child: Text('Weekly')),
+                        DropdownMenuItem(value: AnalyticsRange.monthly, child: Text('Monthly')),
+                        DropdownMenuItem(value: AnalyticsRange.custom, child: Text('Custom')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _selectedRange = value;
+                            _refreshStats();
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: _selectedRange == AnalyticsRange.custom ? _pickCustomRange : _pickAnchorDate,
+                    child: Text(_rangeLabel()),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: FutureBuilder<_AnalyticsData>(
+                  future: _futureData,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(child: Text('Error: ${snapshot.error}'));
+                    }
+                    final data = snapshot.data ?? _AnalyticsData(activityAvg: {}, habits: [], days: 0, scores: []);
+                    
+                    if (data.days == 0) {
+                       return const Center(child: Text('No data for selected range'));
+                    }
+
+                    return TabBarView(
+                      children: [
+                        _buildOverviewTab(data),
+                        _buildMotivationTab(data),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  Widget _buildOverviewTab(_AnalyticsData data) {
+    if (data.activityAvg.isEmpty) {
+      return const Center(child: Text('No activity data'));
+    }
+    final sorted = data.activityAvg.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final double totalHours = data.activityAvg.values.fold(0, (a, b) => a + b);
+
+    return ListView(
+      children: [
+        ..._buildactivityTiles(sorted, totalHours),
+        ListTile(
+          title: const Text('Days logged in range'),
+          trailing: Text('${data.days}'),
+        ),
+        const Divider(),
+        ListTile(
+          title: const Text('Avg Tracked Time / Day'),
+          trailing: Text('${totalHours.toStringAsFixed(1)} h/day'),
+        ),
+        const SizedBox(height: 8),
+        _buildAdditionalStats(data.activityAvg),
+        if (data.habits.isNotEmpty) ...[
+          const Divider(),
+          const ListTile(title: Text('Habits')),
+          ...data.habits.map((h) => h.type == HabitType.binary
+              ? ListTile(
+                  title: Text(h.name),
+                  subtitle: LinearProgressIndicator(
+                    value: h.completionRate,
+                    minHeight: 6,
+                  ),
+                  trailing: Text('${(h.completionRate * 100).toStringAsFixed(0)}%'),
+                )
+              : ListTile(
+                  title: Text(h.name),
+                  trailing: Text('${h.avgCount.toStringAsFixed(1)} /day (${h.daysLogged}d)'),
+                )),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMotivationTab(_AnalyticsData data) {
+    if (data.scores.isEmpty) {
+      return const Center(child: Text('No scores recorded for this period.'));
+    }
+    
+    // Prepare spots for chart
+    final spots = <FlSpot>[];
+    for (int i = 0; i < data.scores.length; i++) {
+        spots.add(FlSpot(i.toDouble(), data.scores[i].totalScore.toDouble()));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        children: [
+          const SizedBox(height: 20),
+          Text('Daily Score Trend', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 40),
+          SizedBox(
+            height: 250,
+            child: LineChart(
+              LineChartData(
+                gridData: const FlGridData(show: true),
+                titlesData: FlTitlesData(
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 1,
+                      getTitlesWidget: (val, meta) {
+                        final index = val.toInt();
+                        if (index >= 0 && index < data.scores.length) {
+                           // Show simplified date (e.g. 15 Jan)
+                           // If too many points, skip specific labels?
+                           if (data.scores.length > 7 && index % (data.scores.length ~/ 5) != 0) return const SizedBox.shrink();
+                           final d = data.scores[index].date;
+                           return Padding(
+                             padding: const EdgeInsets.only(top: 8.0),
+                             child: Text(DateFormat('d MMM').format(d), style: const TextStyle(fontSize: 10)),
+                           );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(showTitles: true, interval: 20, reservedSize: 40),
+                  ),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                borderData: FlBorderData(show: true),
+                minX: 0,
+                maxX: (data.scores.length - 1).toDouble(),
+                minY: 0,
+                maxY: 100,
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: Colors.green,
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: true),
+                    belowBarData: BarAreaData(show: true, color: Colors.green.withOpacity(0.1)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: ListView.builder(
+              itemCount: data.scores.length,
+              itemBuilder: (context, index) {
+                // reverse order (newest top)
+                final score = data.scores[data.scores.length - 1 - index];
+                return ListTile(
+                  title: Text(DateFormat('EEEE, MMM d').format(score.date)),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getScoreColor(score.totalScore).withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text('${score.totalScore}', style: TextStyle(fontWeight: FontWeight.bold, color: _getScoreColor(score.totalScore))),
+                  ),
+                  subtitle: Text(score.coachTip.isNotEmpty ? score.coachTip : 'No tip'),
+                  onTap: () => _showScoreDetails(score),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showScoreDetails(DailyScore score) {
+    // We can reuse DayScoreDialog? Need to import it?
+    // AnalyticsScreen currently doesn't import DayScoreDialog.
+    // I need to add import or just show simple dialog.
+    // For now simple dialog.
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Score: ${score.totalScore}'),
+        content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: score.breakdown.entries.map((e) => Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                    Text(e.key.toUpperCase()), 
+                    Text(e.value.toString())
+                ]
+            )).toList(),
+        ),
+        actions: [TextButton(onPressed:()=>Navigator.pop(ctx), child:const Text('Close'))],
+      ),
+    );
+  }
+
+  Color _getScoreColor(int score) {
+    if (score >= 80) return Colors.green;
+    if (score >= 60) return Colors.orange;
+    return Colors.red;
+  }
+
 
   Widget _buildAdditionalStats(Map<String, double> data) {
     if (data.isEmpty) return const SizedBox.shrink();

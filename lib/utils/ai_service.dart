@@ -1,5 +1,6 @@
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:convert';
 
 class AIService {
   // Now using secured API key from .env
@@ -287,6 +288,44 @@ Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
       return text;
     } catch (e) {
       return '{"error": "$e"}';
+    }
+  }
+  Future<Map<String, dynamic>> analyzeGoalAlignment({
+    required String goal,
+    required List<String> logs,
+  }) async {
+    final prompt = '''
+You are a productivity evaluator.
+Target Goal: "$goal"
+
+Daily Activity Logs:
+${logs.join('\n')}
+
+Evaluate how well the day's activities aligned with the target goal (0-100).
+- 0 = No alignment / Counter-productive
+- 100 = Perfect alignment / Major progress
+- Consider indirect activities (e.g. Sleep is good for "Health" goals, but neutral for "Coding" goals unless rest is needed).
+
+Return strict JSON:
+{
+  "score": 75,
+  "analysis": "One sentence explaining the score.",
+  "tip": "Short tip to improve alignment tomorrow."
+}
+''';
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await _model.generateContent(content);
+      var text = response.text ?? '{}';
+      text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+      
+      if (text.startsWith('{')) {
+        return Map<String, dynamic>.from(jsonDecode(text));
+      }
+      return {"error": "Invalid JSON"};
+    } catch (e) {
+      return {"error": "$e"};
     }
   }
 }

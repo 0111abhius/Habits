@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'login_screen.dart';
+import 'score_config_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -210,6 +211,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   onTap: () => _selectTime(_wakeTimeController),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.psychology),
+                  title: const Text('Motivation Settings'),
+                  subtitle: const Text('Configure goals and score weights'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ScoreConfigScreen()),
+                    );
+                  },
                 ),
               ],
             ),

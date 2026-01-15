@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'profile_screen.dart';
 import '../models/timeline_entry.dart';
@@ -19,7 +20,11 @@ import '../models/timeline_view_mode.dart';
 import '../widgets/timeline_view_header.dart';
 import '../widgets/day_overview_dialog.dart';
 import '../utils/ai_service.dart';
-import 'dart:convert';
+import '../models/daily_score.dart';
+import '../models/daily_log.dart';
+import '../models/user_settings.dart';
+import '../services/score_service.dart';
+import '../widgets/day_score_dialog.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -83,6 +88,10 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   // Overview Data
   Map<String, dynamic>? _dayOverviewData;
   bool _isGeneratingOverview = false;
+  DateTime? _lastPlannedAt;
+  DailyScore? _dailyScore;
+  bool _isCalculatingScore = false;
+  String? _morningBrief;
 
   @override
   void initState() {
@@ -182,6 +191,24 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     final lastWeek = selectedDate.subtract(const Duration(days: 7));
     final wStr = DateFormat('yyyy-MM-dd').format(lastWeek);
     final wSnap = await entriesColl.where('date', isEqualTo: wStr).get();
+
+    // 3. Fetch Yesterday's Daily Log for Morning Brief
+    try {
+       final yLogDoc = await getFirestore()
+          .collection('daily_logs')
+          .doc(user.uid)
+          .collection('logs')
+          .doc(yStr)
+          .get();
+       
+       if (yLogDoc.exists && yLogDoc.data()!.containsKey('scoreDetails')) {
+         final details = yLogDoc.data()!['scoreDetails'] as Map<String, dynamic>;
+         final tip = details['coachTip'] as String?;
+         if (tip != null && tip.isNotEmpty) {
+           _morningBrief = tip;
+         }
+       }
+    } catch (_) {}
 
     if (mounted) {
       setState(() {
@@ -501,38 +528,24 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                   valueListenable: _dayCompleteNotifier,
                   builder: (context, done, _) {
                     if (done) {
-                      // Show AI Overview
                       return MediaQuery.of(context).size.width < 400
                           ? IconButton(
-                              icon: _isGeneratingOverview 
+                              icon: _isCalculatingScore 
                                   ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
-                                  : const Icon(Icons.summarize),
-                              tooltip: 'AI Overview',
-                              onPressed: () {
-                                if (_isGeneratingOverview) return;
-                                if (_dayOverviewData != null) {
-                                  DayOverviewDialog.show(context, _dayOverviewData!);
-                                } else {
-                                  _generateDayOverview();
-                                }
-                              },
+                                  : Icon(_dailyScore != null ? Icons.score : Icons.analytics_outlined),
+                              tooltip: 'Day Score',
+                              onPressed: _calculateAndShowScore,
                             )
                           : OutlinedButton.icon(
-                              onPressed: () {
-                                if (_isGeneratingOverview) return;
-                                if (_dayOverviewData != null) {
-                                  DayOverviewDialog.show(context, _dayOverviewData!);
-                                } else {
-                                  _generateDayOverview();
-                                }
-                              },
-                              icon: _isGeneratingOverview 
+                              onPressed: _calculateAndShowScore,
+                              icon: _isCalculatingScore 
                                   ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
-                                  : const Icon(Icons.summarize, size: 18),
-                              label: Text(_isGeneratingOverview ? 'Processing' : 'AI Overview'),
+                                  : Icon(_dailyScore != null ? Icons.score : Icons.analytics_outlined, size: 18),
+                              label: Text(_isCalculatingScore ? 'Calculating...' : (_dailyScore != null ? 'Score: ${_dailyScore!.totalScore}' : 'Day Score')),
                               style: OutlinedButton.styleFrom(
                                 visualDensity: VisualDensity.compact,
                                 side: BorderSide(color: Theme.of(context).primaryColor),
+                                backgroundColor: _dailyScore != null ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
                               ),
                             );
                     } else {
@@ -635,6 +648,26 @@ IconButton(
                   },
                   completedDates: _loggedDates,
                 ),
+                if (_morningBrief != null && !selectedDate.isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.3)),
+                      ),
+                      child: ListTile(
+                        leading: Icon(Icons.light_mode, color: Theme.of(context).primaryColor),
+                        title: const Text('Morning Brief', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: Text(_morningBrief!, style: const TextStyle(fontSize: 13)),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => setState(() => _morningBrief = null),
+                        ),
+                      ),
+                    ),
+                  ),
                 ValueListenableBuilder<bool>(
                   valueListenable: _habitsExpandedNotifier,
                   builder: (context, expanded, _) => ExpansionTile(
@@ -889,6 +922,26 @@ IconButton(
         const SnackBar(content: Text('Unable to update entry. Please try again later.')),
       );
     }
+
+    // Update lastPlannedAt if this is a new plan
+    if (isPlan && activity.isNotEmpty && _lastPlannedAt == null) {
+      final now = DateTime.now();
+      // Only set if we are planning for today or future (or even yesterday if just doing it now)
+      // The logic is: "When did they make the plan?" -> Now.
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          await getFirestore()
+              .collection('daily_logs')
+              .doc(user.uid)
+              .collection('logs')
+              .doc(_dateStr(entry.date))
+              .set({'lastPlannedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+          
+          if (mounted) setState(() => _lastPlannedAt = now);
+        }
+      } catch (_) {}
+    }
   }
 
 
@@ -1077,20 +1130,112 @@ IconButton(
   Future<void> _loadDayComplete() async{
     final uid=FirebaseAuth.instance.currentUser?.uid; if(uid==null) return;
     final doc=await getFirestore().collection('daily_logs').doc(uid).collection('logs').doc(_dateStr(selectedDate)).get();
-    _dayCompleteNotifier.value = doc.exists && (doc.data()?['complete']==true);
-    
-    if (doc.exists && doc.data() != null && doc.data()!.containsKey('overview')) {
-      final data = doc.data()!['overview'];
-      // Ensure it's a Map
-      if (data is Map) {
-        _dayOverviewData = Map<String, dynamic>.from(data);
+    if (doc.exists && doc.data() != null) {
+      _dayCompleteNotifier.value = doc.data()!['complete'] == true;
+      if (doc.data()!.containsKey('lastPlannedAt')) {
+        _lastPlannedAt = (doc.data()!['lastPlannedAt'] as Timestamp).toDate();
       } else {
-        _dayOverviewData = null;
+        _lastPlannedAt = null;
+      }
+
+      if (doc.data()!.containsKey('overview')) {
+        final data = doc.data()!['overview'];
+        // Ensure it's a Map
+        if (data is Map) {
+          _dayOverviewData = Map<String, dynamic>.from(data);
+        } else {
+          _dayOverviewData = null;
+        }
+      }
+      if (doc.data()!.containsKey('scoreDetails')) {
+        try {
+          // Add doc ID if needed, or just map
+          // We need userId and date to reconstruct if not fully in map, but fromFirestore handles it usually?
+          // DailyScore.fromFirestore expects a DocSnapshot. We have a map here if it's a field.
+          // Let's modify DailyScore to have fromMap or just manual parse.
+          // Accessing 'scoreDetails' map:
+          final sMap = doc.data()!['scoreDetails'] as Map<String, dynamic>;
+          // Reconstruct DailyScore from map
+          _dailyScore = DailyScore(
+            userId: sMap['userId'],
+            date: (sMap['date'] as Timestamp).toDate(),
+            totalScore: sMap['totalScore'],
+            breakdown: Map<String, int>.from(sMap['breakdown'] ?? {}),
+            aiGoalAnalysis: sMap['aiGoalAnalysis'] ?? '',
+            coachTip: sMap['coachTip'] ?? '',
+            computedAt: (sMap['computedAt'] as Timestamp).toDate(),
+          );
+        } catch (_) {
+          _dailyScore = null;
+        }
+      } else {
+        _dailyScore = null;
       }
     } else {
+      _dayCompleteNotifier.value = false;
+      _lastPlannedAt = null;
       _dayOverviewData = null;
+      _dailyScore = null;
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _calculateAndShowScore() async {
+    if (_isCalculatingScore) return;
+    if (_dailyScore != null) {
+      DayScoreDialog.show(context, _dailyScore!);
+      return;
+    }
+    
+    setState(() => _isCalculatingScore = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      
+      // 1. Get UserSettings
+      final settingsDoc = await getFirestore().collection('user_settings').doc(user.uid).get();
+      final settings = settingsDoc.exists 
+        ? UserSettings.fromMap(settingsDoc.data()!) 
+        : UserSettings(userId: user.uid, sleepTime: TimeOfDay(hour: 23, minute: 0), wakeTime: TimeOfDay(hour: 7, minute: 0));
+
+      // 2. Prepare DailyLog object
+      final dailyLog = DailyLog(
+        dateStr: _dateStr(selectedDate), 
+        complete: _dayComplete, 
+        lastUpdated: DateTime.now(),
+        lastPlannedAt: _lastPlannedAt,
+      );
+
+      // 3. Calculate
+      final newScore = await ScoreService().calculateDailyScore(
+        userId: user.uid,
+        date: selectedDate,
+        entries: _cachedEntries, // Use cached entries for current view
+        log: dailyLog,
+        settings: settings,
+      );
+
+      // 4. Save
+      await getFirestore()
+          .collection('daily_logs')
+          .doc(user.uid)
+          .collection('logs')
+          .doc(_dateStr(selectedDate))
+          .set({'scoreDetails': newScore.toMap()}, SetOptions(merge: true));
+
+      if (mounted) {
+        setState(() {
+          _dailyScore = newScore;
+          _isCalculatingScore = false;
+        });
+        DayScoreDialog.show(context, newScore);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isCalculatingScore = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error calculating score: $e')));
+      }
+    }
   }
 
   Future<void> _generateDayOverview() async {
