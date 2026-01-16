@@ -7,18 +7,24 @@ import '../utils/ai_service.dart';
 class AIGoalDialog extends StatelessWidget {
   final String title;
   final String promptLabel;
-  final TextEditingController _controller = TextEditingController();
+  final String? initialGoal;
+  final TextEditingController _controller;
 
   AIGoalDialog({
     super.key,
     required this.title,
     this.promptLabel = 'What is your main goal?',
-  });
+    this.initialGoal,
+  }) : _controller = TextEditingController(text: initialGoal);
 
-  static Future<String?> show(BuildContext context, {required String title, String? promptLabel}) {
+  static Future<String?> show(BuildContext context, {required String title, String? promptLabel, String? initialGoal}) {
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AIGoalDialog(title: title, promptLabel: promptLabel ?? 'What is your main goal?'),
+      builder: (ctx) => AIGoalDialog(
+        title: title, 
+        promptLabel: promptLabel ?? 'What is your main goal?',
+        initialGoal: initialGoal,
+      ),
     );
   }
 

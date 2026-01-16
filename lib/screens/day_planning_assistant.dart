@@ -5,16 +5,31 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import '../models/timeline_entry.dart';
 import '../models/task.dart';
+import '../models/user_settings.dart';
 import '../utils/ai_service.dart';
 import '../widgets/ai_planning_dialogs.dart';
 import '../main.dart'; // for getFirestore()
 
 class DayPlanningAssistant {
   static Future<void> show(BuildContext context, DateTime date, List<TimelineEntry> currentEntries, List<String> availableActivities) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    String defaultGoal = '';
+    
+    if (uid != null) {
+      try {
+        final doc = await getFirestore().collection('user_settings').doc(uid).get();
+        if (doc.exists) {
+           final settings = UserSettings.fromMap(doc.data()!);
+           defaultGoal = settings.goalText;
+        }
+      } catch (_) {}
+    }
+
     final goal = await AIGoalDialog.show(
       context, 
       title: 'AI Day Planner', 
       promptLabel: 'Planning for ${DateFormat('MMM d').format(date)}.\nWhat is your main goal?',
+      initialGoal: defaultGoal,
     );
 
     if (goal != null) {
@@ -43,21 +58,64 @@ class DayPlanningAssistant {
       }
       
       // Fetch Tasks for Today
+      // Fetch Tasks
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
+        // Fetch ALL incomplete tasks to prioritize
         final taskSnap = await getFirestore()
             .collection('tasks')
             .where('userId', isEqualTo: uid)
-            .where('isToday', isEqualTo: true)
             .where('isCompleted', isEqualTo: false)
             .get();
         
-        if (taskSnap.docs.isNotEmpty) {
-          buffer.writeln('\nTASKS TO SCHEDULE TODAY:');
-          for (final doc in taskSnap.docs) {
-             final t = Task.fromFirestore(doc);
-             buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)');
-          }
+        final allTasks = taskSnap.docs.map((d) => Task.fromFirestore(d)).toList();
+        
+        // Sorting Logic:
+        // 1. Overdue (scheduled before today)
+        // 2. Today (isToday=true OR scheduledDate=today)
+        // 3. Tomorrow/Future (scheduledDate > today) -> Maybe exclude or put last?
+        // 4. No Date / Inbox
+
+        final now = DateTime.now();
+        final todayStart = DateTime(now.year, now.month, now.day);
+        final tomorrowStart = todayStart.add(const Duration(days: 1));
+
+        final List<Task> highPriority = [];
+        final List<Task> otherTasks = [];
+
+        for (final t in allTasks) {
+           bool isOverdue = false;
+           bool isToday = t.isToday;
+           
+           if (t.scheduledDate != null) {
+             final d = DateTime(t.scheduledDate!.year, t.scheduledDate!.month, t.scheduledDate!.day);
+             if (d.isBefore(todayStart)) isOverdue = true;
+             if (d == todayStart) isToday = true;
+           }
+
+           if (isOverdue || isToday) {
+             highPriority.add(t);
+           } else {
+             otherTasks.add(t);
+           }
+        }
+
+        // Add to buffer
+        if (highPriority.isNotEmpty) {
+           buffer.writeln('\nURGENT / TODAY TITLES:');
+           for (final t in highPriority) {
+              final due = t.scheduledDate != null && t.scheduledDate!.isBefore(todayStart) ? ' [OVERDUE]' : '';
+              buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)$due');
+           }
+        }
+
+        if (otherTasks.isNotEmpty) {
+           buffer.writeln('\nOTHER AVAILABLE TASKS (Select if relevant to goal):');
+           // Limit others to prevent context overflow (e.g. top 15 most recent or just standard)
+           // For now take top 15
+           for (final t in otherTasks.take(15)) {
+              buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)');
+           }
         }
       }
 
