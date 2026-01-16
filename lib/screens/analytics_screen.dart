@@ -56,7 +56,7 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  AnalyticsRange _selectedRange = AnalyticsRange.daily;
+  AnalyticsRange _selectedRange = AnalyticsRange.weekly;
   DateTime _anchorDate = DateTime.now(); // used for daily/weekly/monthly
   DateTimeRange? _customRange;
   Future<_AnalyticsData>? _futureData;

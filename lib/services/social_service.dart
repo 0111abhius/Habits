@@ -12,7 +12,7 @@ class SocialService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    print("DEBUG: updateSocialStats called for ${user.email}"); // DEBUG
+
 
     // FIX: Using 'profile' collection to match the CollectionGroup query and Index
     final docRef = _firestore.collection('users').doc(user.uid).collection('profile').doc('stats');
@@ -49,7 +49,7 @@ class SocialService {
     streak = _calculateStreak(recent);
 
     final emailLower = (user.email ?? '').toLowerCase();
-    print("DEBUG: Saving profile for $emailLower with streak $streak"); // DEBUG
+
 
     final profile = SocialProfile(
       userId: user.uid,
@@ -63,7 +63,7 @@ class SocialService {
     );
 
     await docRef.set(profile.toMap(), SetOptions(merge: true));
-    print("DEBUG: Profile saved successfully."); // DEBUG
+
   }
 
   int _calculateStreak(Map<String, int> scores) {
@@ -99,14 +99,14 @@ class SocialService {
 
   Future<List<SocialProfile>> searchUsers(String emailQuery) async {
     final query = emailQuery.toLowerCase();
-    print("DEBUG: Searching for user with email: $query"); // DEBUG
+
     
     final snap = await _firestore.collectionGroup('profile')
         .where('email', isEqualTo: query)
         .limit(1)
         .get();
         
-    print("DEBUG: Found ${snap.docs.length} users"); // DEBUG
+
     return snap.docs.map((d) => SocialProfile.fromMap(d.data())).toList();
   }
 
