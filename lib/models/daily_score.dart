@@ -8,6 +8,7 @@ class DailyScore {
   final String aiGoalAnalysis;
   final String coachTip;
   final DateTime computedAt;
+  final Map<String, dynamic> nutrition;
 
   DailyScore({
     required this.userId,
@@ -17,6 +18,7 @@ class DailyScore {
     this.aiGoalAnalysis = '',
     this.coachTip = '',
     required this.computedAt,
+    this.nutrition = const {},
   });
 
   Map<String, dynamic> toMap() {
@@ -28,6 +30,7 @@ class DailyScore {
       'aiGoalAnalysis': aiGoalAnalysis,
       'coachTip': coachTip,
       'computedAt': Timestamp.fromDate(computedAt),
+      'nutrition': nutrition,
     };
   }
 
@@ -41,6 +44,7 @@ class DailyScore {
       aiGoalAnalysis: data['aiGoalAnalysis'] as String? ?? '',
       coachTip: data['coachTip'] as String? ?? '',
       computedAt: (data['computedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      nutrition: data['nutrition'] as Map<String, dynamic>? ?? {},
     );
   }
 }

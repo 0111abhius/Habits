@@ -71,6 +71,80 @@ class DayScoreDialog extends StatelessWidget {
             
             const SizedBox(height: 32),
             
+            if (score.nutrition.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.restaurant, size: 20, color: Colors.green),
+                        const SizedBox(width: 8),
+                        const Text('Nutrition Estimate', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const Spacer(),
+                        if (score.nutrition['calories'] != null)
+                          Text('${score.nutrition['calories']} kcal', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (score.nutrition['macros'] != null) ...[
+                      _buildMacroRow(
+                        'Protein', 
+                        score.nutrition['macros']['protein']?.toString() ?? '0',
+                        Colors.redAccent
+                      ),
+                      _buildMacroRow(
+                        'Carbs', 
+                        score.nutrition['macros']['carbs']?.toString() ?? '0',
+                        Colors.orangeAccent
+                      ),
+                      _buildMacroRow(
+                        'Fats', 
+                        score.nutrition['macros']['fats']?.toString() ?? '0',
+                        Colors.blueAccent
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (score.nutrition['micros'] != null && (score.nutrition['micros'] as List).isNotEmpty) ...[
+                      const Text('Micros', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                      Wrap(
+                        spacing: 6,
+                        children: (score.nutrition['micros'] as List).map((m) => Chip(
+                          label: Text(m, style: const TextStyle(fontSize: 10)),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        )).toList(),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (score.nutrition['improvements'] != null && (score.nutrition['improvements'] as List).isNotEmpty) ...[
+                      const Divider(height: 16),
+                      const Text('Suggestions:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                      ...(score.nutrition['improvements'] as List).map((i) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('• ', style: TextStyle(fontSize: 12)),
+                            Expanded(child: Text(i, style: const TextStyle(fontSize: 12))),
+                          ],
+                        ),
+                      )).toList(),
+                    ]
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 32),
+            
             // AI Analysis Section
             Container(
               padding: const EdgeInsets.all(16),
@@ -152,5 +226,19 @@ class DayScoreDialog extends StatelessWidget {
     if (score >= 80) return Colors.green;
     if (score >= 60) return Colors.orange;
     return Colors.red;
+  }
+
+  Widget _buildMacroRow(String label, String value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(
+        children: [
+          Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 12))),
+          Text('${value}g', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        ],
+      ),
+    );
   }
 }

@@ -30,7 +30,10 @@ class ScoreService {
     int goalScore = aiResult['score'] as int? ?? 50;
     String aiAnalysis = aiResult['analysis'] as String? ?? "Analysis unavailable.";
     String tip = aiResult['tip'] as String? ?? "";
-    
+
+    // 5. Nutrition Analysis (AI Powered)
+    final nutritionResult = await _calculateNutritionAI(entries);
+
     // Final Weighted Average
     double total = 
         (planningScore * (weights['planning'] ?? 20)) +
@@ -53,12 +56,25 @@ class ScoreService {
       aiGoalAnalysis: aiAnalysis,
       coachTip: tip,
       computedAt: DateTime.now(),
+      nutrition: nutritionResult,
     );
 
     // Sync to Social Profile (Fire & Forget)
     SocialService().updateSocialStats(score);
 
     return score;
+  }
+
+  Future<Map<String, dynamic>> _calculateNutritionAI(List<TimelineEntry> entries) async {
+    // Format logs specifically for nutrition (maybe focusing on meals?)
+    // But AI can filter. Let's send "Activity: Notes"
+    List<String> logs = entries.where((e) => e.activity.isNotEmpty).map((e) {
+      return "${e.activity}: ${e.notes}";
+    }).toList();
+    
+    if (logs.isEmpty) return {};
+
+    return await AIService().analyzeNutrition(logs: logs);
   }
 
   Future<Map<String, dynamic>> _calculateGoalAnalysisAI(List<TimelineEntry> entries, String goal) async {

@@ -328,4 +328,52 @@ Return strict JSON:
       return {"error": "$e"};
     }
   }
+
+  Future<Map<String, dynamic>> analyzeNutrition({
+    required List<String> logs,
+  }) async {
+    final prompt = '''
+You are a nutrition expert.
+Analyze the following daily activity logs to estimate nutritional intake.
+Focus on activities labeled as meals or referring to food/drink, and their notes.
+
+DAILY LOGS:
+${logs.join('\n')}
+
+Based on the descriptions provided in the logs (notes often contain food details), please estimate:
+1. Total Calories (very rough estimate).
+2. Macros (Protein, Carbs, Fats) in grams.
+3. Micros (Key vitamins/minerals likely present).
+4. Improvements (Suggestions for a healthier diet based on this day).
+
+If no food is explicitly mentioned, provide a generic polite message ("No meals logged with details").
+
+Return strict JSON:
+{
+  "calories": 2000,
+  "macros": {
+    "protein": 100,
+    "carbs": 250,
+    "fats": 70
+  },
+  "micros": ["Vitamin C", "Iron", "Calcium"],
+  "improvements": ["Eat more vegetables", "Reduce sugar intake"]
+}
+Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
+''';
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await _model.generateContent(content);
+      var text = response.text ?? '{}';
+      text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+      
+      if (text.startsWith('{')) {
+        return Map<String, dynamic>.from(jsonDecode(text));
+      }
+      return {"error": "Invalid JSON"};
+    } catch (e) {
+      return {"error": "$e"};
+    }
+  }
 }
