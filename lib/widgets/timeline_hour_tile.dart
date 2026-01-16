@@ -265,7 +265,9 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
       final bool isCompare = widget.viewMode == TimelineViewMode.compare;
       // In compare mode, we have very limited width (approx 50% - gutter - margins).
       // We drastically reduce items to prevent overflow.
-      final int quickCount = isCompare ? 0 : (MediaQuery.of(context).size.width < 400 ? 2 : 3);
+      final int quickCount = isCompare 
+          ? (MediaQuery.of(context).size.width < 600 ? 1 : 2) 
+          : (MediaQuery.of(context).size.width < 400 ? 2 : 3);
       final double maxLabelWidth = isCompare ? 70.0 : 130.0;
 
       return Container(
