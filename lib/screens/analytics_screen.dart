@@ -21,6 +21,12 @@ enum AnalyticsRange {
   custom,
 }
 
+enum AnalyticsFilter {
+  all,
+  weekdays,
+  weekends,
+}
+
 class _HabitStat {
   final String name;
   final HabitType type;
@@ -57,6 +63,7 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   AnalyticsRange _selectedRange = AnalyticsRange.weekly;
+  AnalyticsFilter _selectedFilter = AnalyticsFilter.all;
   DateTime _anchorDate = DateTime.now(); // used for daily/weekly/monthly
   DateTimeRange? _customRange;
   Future<_AnalyticsData>? _futureData;
@@ -118,11 +125,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         .where('date', isLessThanOrEqualTo: dateFormat.format(end))
         .get();
 
+    bool isDateAllowed(DateTime d) {
+      if (_selectedFilter == AnalyticsFilter.weekdays) {
+        return d.weekday >= 1 && d.weekday <= 5;
+      }
+      if (_selectedFilter == AnalyticsFilter.weekends) {
+        return d.weekday == 6 || d.weekday == 7;
+      }
+      return true;
+    }
+
     final completedDates = {
-      for (final d in completedSnap.docs) (d['date'] as String)
+      for (final d in completedSnap.docs)
+        if (isDateAllowed(DateTime.parse(d['date'] as String)))
+          (d['date'] as String)
     };
 
     final days = completedDates.length;
+    final int daysInPeriod = end.difference(start).inDays + 1;
     
     // Parse scores
     final List<DailyScore> scores = [];
@@ -143,6 +163,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       }
     }
     scores.sort((a,b) => a.date.compareTo(b.date));
+    
+    // Filter scores by allowed dates
+    scores.removeWhere((s) => !isDateAllowed(s.date));
 
     if(days==0){
       return _AnalyticsData(activityAvg:{},habits:[],days:0, scores: []);
@@ -161,7 +184,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     final entries = snapshot.docs
         .map((doc) => TimelineEntry.fromFirestore(doc))
-        .where((e) => completedDates.contains(dateFormat.format(e.date)))
+        .where((e) => isDateAllowed(e.date))
         .toList();
 
     // Sort entries to handle overlaps correctly
@@ -208,8 +231,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final Map<String, int> counterLogged = {};
 
     // Iterate over each day in range and fetch logs for that date.
-    for (int offset = 0; offset < days; offset++) {
+    for (int offset = 0; offset < daysInPeriod; offset++) {
       final date = start.add(Duration(days: offset));
+      if (!isDateAllowed(date)) continue;
+      
       final dateId = dateFormat.format(date);
       final logsSnap = await getFirestore()
           .collection('habit_logs')
@@ -538,6 +563,24 @@ Pay special attention to where my 'Actual' activity differed from my 'Planned' a
                   TextButton(
                     onPressed: _selectedRange == AnalyticsRange.custom ? _pickCustomRange : _pickAnchorDate,
                     child: Text(_rangeLabel()),
+                  ),
+                  const SizedBox(width: 8),
+                  DropdownButton<AnalyticsFilter>(
+                    value: _selectedFilter,
+                    underline: const SizedBox(),
+                    items: const [
+                      DropdownMenuItem(value: AnalyticsFilter.all, child: Text('All Days')),
+                      DropdownMenuItem(value: AnalyticsFilter.weekdays, child: Text('Weekdays')),
+                      DropdownMenuItem(value: AnalyticsFilter.weekends, child: Text('Weekends')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _selectedFilter = value;
+                          _refreshStats();
+                        });
+                      }
+                    },
                   ),
                 ],
               ),
