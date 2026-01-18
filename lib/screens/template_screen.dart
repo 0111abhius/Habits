@@ -31,6 +31,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
   List<String> _flattenCats() => _activities;
   String _displayLabel(String c)=>displayActivity(c);
 
+  DateTime? _validUntil;
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +62,22 @@ class _TemplateScreenState extends State<TemplateScreen> {
           .collection('templates')
           .doc(widget.templateId)
           .collection('entries');
+
+      // Also fetch the parent doc to get metadata (validUntil)
+      try {
+        final docSync = await getFirestore()
+            .collection('user_templates')
+            .doc(uid)
+            .collection('templates')
+            .doc(widget.templateId)
+            .get();
+        if (docSync.exists && docSync.data() != null) {
+          final d = docSync.data()!;
+          if (d.containsKey('validUntil') && d['validUntil'] != null) {
+             _validUntil = (d['validUntil'] as Timestamp).toDate();
+          }
+        }
+      } catch (_) {}
     } else {
       // Fallback for legacy calls (should be avoided)
       coll = getFirestore()
@@ -248,8 +266,23 @@ class _TemplateScreenState extends State<TemplateScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.templateName ?? 'Template'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.templateName ?? 'Template'),
+            if (_validUntil != null)
+              Text(
+                'Apply until: ${DateFormat('yyyy-MM-dd').format(_validUntil!)}',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+              ),
+          ],
+        ),
         actions: [
+          IconButton(
+             icon: const Icon(Icons.calendar_today),
+             tooltip: 'Set Expiration Date',
+             onPressed: _pickValidUntilDate,
+          ),
           IconButton(
             icon: const Icon(Icons.auto_awesome),
             tooltip: 'AI Coach',
@@ -583,5 +616,44 @@ class _TemplateScreenState extends State<TemplateScreen> {
     setState(() {
       _activities = all.toList();
     });
+  }
+
+  Future<void> _pickValidUntilDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context, 
+      initialDate: _validUntil ?? now.add(const Duration(days: 7)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365 * 5)),
+      helpText: 'Select "Apply Until" Date',
+    );
+
+    // If picked is null, do we clear it? 
+    // Usually Cancel means "change nothing". 
+    // Let's add an option to clear inside dialog or just treat null as no-op.
+    // Use a dialog wrapper if we want "Clear".
+    // Or just let user select a date.
+    
+    if (picked != null) {
+      setState(() => _validUntil = picked);
+      await _saveValidUntil(picked);
+    }
+  }
+
+  Future<void> _saveValidUntil(DateTime? date) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || widget.templateId == null) return;
+
+    final ref = getFirestore()
+        .collection('user_templates')
+        .doc(uid)
+        .collection('templates')
+        .doc(widget.templateId);
+
+    if (date == null) {
+      await ref.update({'validUntil': FieldValue.delete()});
+    } else {
+      await ref.set({'validUntil': Timestamp.fromDate(date)}, SetOptions(merge: true));
+    }
   }
 } 

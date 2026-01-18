@@ -585,13 +585,58 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                 tooltip: 'Jump to Now',
                 onPressed: _scrollToNow,
               ),
-IconButton(
+              IconButton(
                 icon: const Icon(Icons.copy_all),
                 tooltip: 'Use Template',
                 onPressed: () async {
                   await Navigator.pushNamed(context, '/template');
                   if (mounted) setState(() {});
                 },
+              ),
+              PopupMenuButton<String>(
+                onSelected: (value) async {
+                  if (value == 'clear_all') {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Clear all activities?'),
+                        content: const Text('This will remove all logged and planned activities for this day. This cannot be undone.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear All', style: TextStyle(color: Colors.red))),
+                        ],
+                      ),
+                    );
+                    if (confirm == true) {
+                      await _clearTimeline(keepSleep: false);
+                    }
+                  } else if (value == 'clear_except_sleep') {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Clear except Sleep?'),
+                        content: const Text('This will remove all activities except Sleep. This cannot be undone.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear', style: TextStyle(color: Colors.red))),
+                        ],
+                      ),
+                    );
+                    if (confirm == true) {
+                      await _clearTimeline(keepSleep: true);
+                    }
+                  }
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  const PopupMenuItem<String>(
+                    value: 'clear_except_sleep',
+                    child: Text('Clear except Sleep'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'clear_all',
+                    child: Text('Clear All', style: TextStyle(color: Colors.red)),
+                  ),
+                ],
               ),
               StreamBuilder<User?>(
                 stream: FirebaseAuth.instance.authStateChanges(),
@@ -1328,6 +1373,17 @@ IconButton(
     if (selectedDate.isBefore(today)) return;
     if (_dayComplete) return; // don't overwrite completed day
 
+    // Check if template was already applied today (or user manually cleared it, setting this flag)
+    final dailyLogRef = getFirestore().collection('daily_logs').doc(uid).collection('logs').doc(_dateStr(selectedDate));
+    final dailyLogSnap = await dailyLogRef.get();
+    
+    if (dailyLogSnap.exists) {
+       final data = dailyLogSnap.data();
+       if (data != null && data['templateApplied'] == true) {
+         return; // Already applied or supressed
+       }
+    }
+
     QuerySnapshot tmplSnap;
 
     // Fetch user templates matches
@@ -1340,7 +1396,24 @@ IconButton(
 
     if (tmplQuery.docs.isNotEmpty) {
       // Use the first matching template
-      final tmplId = tmplQuery.docs.first.id;
+      final tmplDocSnapshot = tmplQuery.docs.first;
+      final tmplId = tmplDocSnapshot.id;
+      final tmplData = tmplDocSnapshot.data() as Map<String, dynamic>;
+      
+      // Check validUntil
+      if (tmplData.containsKey('validUntil') && tmplData['validUntil'] != null) {
+        final validUntilTimestamp = tmplData['validUntil'] as Timestamp;
+        final validUntilDate = validUntilTimestamp.toDate();
+        // Compare dates (ignoring time)
+        final vDate = DateTime(validUntilDate.year, validUntilDate.month, validUntilDate.day);
+        final sDate = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+        
+        if (sDate.isAfter(vDate)) {
+           // Template is expired for this date
+           return;
+        }
+      }
+
       tmplSnap = await getFirestore()
           .collection('user_templates')
           .doc(uid)
@@ -1371,6 +1444,8 @@ IconButton(
     final batch = getFirestore().batch();
     final entriesColl = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
 
+    bool appliedAny = false;
+
     for (final doc in tmplSnap.docs) {
       final hour = int.parse(doc.id.substring(0, 2));
       final minute = int.parse(doc.id.substring(2));
@@ -1388,10 +1463,14 @@ IconButton(
           upd['planactivity']=tmplPlanCat; upd['planNotes']=tmplPlanNotes; }
         if(tmplRetroCat.isNotEmpty && existing.activity.isEmpty){
           upd['activity']=tmplRetroCat; upd['notes']=tmplRetroNotes; }
-        if(upd.isNotEmpty){batch.update(entriesColl.doc(existing.id),upd);}        
+        if(upd.isNotEmpty){
+           batch.update(entriesColl.doc(existing.id),upd);
+           appliedAny = true;
+        }        
         continue;
       }
 
+      // If document doesn't exist, created it
       final start = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, hour, minute);
       final newEntry = TimelineEntry(
         id: _docId(start),
@@ -1405,7 +1484,14 @@ IconButton(
         notes: tmplRetroNotes,
       );
       batch.set(entriesColl.doc(newEntry.id), newEntry.toMap());
+      appliedAny = true;
     }
+    
+    // Mark as applied so we don't re-apply on refresh
+    if (appliedAny || tmplSnap.docs.isNotEmpty) {
+      batch.set(dailyLogRef, {'templateApplied': true}, SetOptions(merge: true));
+    }
+
     await batch.commit();
   }
 
@@ -1478,5 +1564,83 @@ IconButton(
       .get();
     _loggedDates = snap.docs.map((d)=>d.id).toSet();
     if(mounted) setState((){});
+  }
+
+  Future<void> _clearTimeline({required bool keepSleep}) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    if (_dayComplete) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot clear completed day')));
+       return;
+    }
+
+    final batch = getFirestore().batch();
+    final entriesColl = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
+
+    bool hasChanges = false;
+    for (final entry in _cachedEntries) {
+      bool shouldClear = true;
+      if (keepSleep && entry.activity == 'Sleep') {
+        shouldClear = false;
+      }
+      
+      // If we are clearing, we reset to empty strings.
+      // If keeping sleep, we preserve it. 
+      // Note: "Clear" usually means resetting to blank state. 
+      // If split hours exist, we might want to merge them back? 
+      // For now, let's just clear the content but keep structure to be safe, or we can just update fields.
+      
+      if (shouldClear) {
+        // If it was already empty, no need to write, but to be safe check
+        if (entry.activity.isNotEmpty || entry.notes.isNotEmpty || entry.planactivity.isNotEmpty || entry.planNotes.isNotEmpty) {
+           batch.update(entriesColl.doc(entry.id), {
+             'activity': '',
+             'notes': '',
+             'planactivity': '',
+             'planNotes': '',
+           });
+           hasChanges = true;
+        }
+      } else {
+        // Keeping Sleep -> Ensure plan matches actual if we want? 
+        // User said "Clear except sleep". 
+        // If I have Plan: Gym, Actual: Sleep -> Keep Activity:Sleep. Plan: Gym? 
+        // Usually "Clear" implies clearing the slate. So likely we want to clear Plan too?
+        // Let's assume we clear Plan unless it matches preserved Activity.
+        // Actually simplest interpretation: "Clear everything, but if Activity is Sleep, leave that Activity/Note alone."
+        // What about Plan? 
+        
+        // If the goal is "I want to clear everything except sleep and make changes", 
+        // likely they want to re-plan the day. So if I planned Gym but Slept, and I keep Sleep, 
+        // I probably want to clear the "Gym" plan.
+        
+        // So for the "Sleep" entry:
+        // Do we clear its Plan? 
+        // If I have Plan: Sleep, Actual: Sleep -> Keep both.
+        // If I have Plan: Work, Actual: Sleep -> Keep Actual:Sleep. Clear Plan? 
+        // Let's clear Plan for consistency, unless implementation detail says otherwise.
+        // But the prompt says "clear already filled values except sleep time".
+        
+        // I will clear Plan fields even for Sleep entries if they differ? 
+        // Let's just update the NON-sleep fields.
+        // Actually, if we keep sleep, we probably want to keep the entry as is.
+        // But if there is a plan attached that isn't sleep...
+        // Let's safe side: Touch NOTHING on a Sleep entry.
+      }
+    }
+
+    if (hasChanges) {
+      // Also ensure we don't re-apply template
+      final dailyLogRef = getFirestore()
+          .collection('daily_logs')
+          .doc(uid)
+          .collection('logs')
+          .doc(_dateStr(selectedDate));
+      
+      batch.set(dailyLogRef, {'templateApplied': true}, SetOptions(merge: true));
+
+      await batch.commit();
+      // Optimistic update handled by listener usually, but we can verify
+    }
   }
 }
