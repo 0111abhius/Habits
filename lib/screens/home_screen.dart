@@ -8,7 +8,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Habits Logger'),
+        title: const Text('Day Coach'),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),

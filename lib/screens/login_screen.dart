@@ -225,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     ),
                     const SizedBox(height: 16),
                     const Text(
-                      'Habits Logger',
+                      'Day Coach',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,

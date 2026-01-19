@@ -250,7 +250,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 32),
           Center(
             child: Text(
-              'Habits Logger v1.0.0',
+              'Day Coach v1.0.0',
               style: TextStyle(color: Colors.grey[400], fontSize: 12),
             ),
           ),
