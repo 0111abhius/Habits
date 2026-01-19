@@ -26,6 +26,8 @@ import '../models/daily_log.dart';
 import '../models/user_settings.dart';
 import '../services/score_service.dart';
 import '../widgets/day_score_dialog.dart';
+import '../services/smart_coach_service.dart';
+import '../widgets/coach_card.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -92,6 +94,8 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   DailyScore? _dailyScore;
   bool _isCalculatingScore = false;
   String? _morningBrief;
+  CoachInsight? _coachInsight;
+  bool _coachDismissed = false;
 
   @override
   void initState() {
@@ -105,14 +109,12 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
       });
     _loadUserSettings();
     _loadDayComplete();
-     // We invoke this twice in the original code, keeping it for safety/consistency with existing logic
-    _loadUserSettings();
-    _loadDayComplete();
     _loadLoggedDates();
     _loadHistoricalData();
+    _loadCoachInsight();
     
     // Check for day changes periodically (every minute) to handle user staying in app across midnight
-    _dayCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) => _checkForDayChange());
+    // _dayCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) => _checkForDayChange());
   }
 
   @override
@@ -164,6 +166,26 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
        // However, we only need to force update if something stale is visible.
        // Minimal refresh:
        if (mounted) setState(() {});
+    }
+    }
+
+  Future<void> _loadCoachInsight() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    // Only load insight if looking at "Today"
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (selectedDate.isBefore(today)) return;
+
+    // Simple heuristic: don't annoy.
+    if (_coachDismissed) return;
+
+    final insight = await SmartCoachService().generateInsight(user.uid);
+    if (mounted && insight != null) {
+      setState(() {
+        _coachInsight = insight;
+      });
     }
   }
 
@@ -522,6 +544,15 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                   onPressed: () => _setDayComplete(!done),
                 ),
               ),
+              IconButton(
+                icon: Badge(
+                  isLabelVisible: (_coachInsight != null && !_coachDismissed) || (_morningBrief != null && !_coachDismissed), // Simplified logic: dot if there are "new" things
+                  smallSize: 8,
+                  child: const Icon(Icons.lightbulb_outline),
+                ),
+                tooltip: 'Daily Briefing',
+                onPressed: () => _showDailyBriefing(context),
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: ValueListenableBuilder<bool>(
@@ -698,26 +729,6 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                   },
                   completedDates: _loggedDates,
                 ),
-                if (_morningBrief != null && !selectedDate.isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)))
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.3)),
-                      ),
-                      child: ListTile(
-                        leading: Icon(Icons.light_mode, color: Theme.of(context).primaryColor),
-                        title: const Text('Morning Brief', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        subtitle: Text(_morningBrief!, style: const TextStyle(fontSize: 13)),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed: () => setState(() => _morningBrief = null),
-                        ),
-                      ),
-                    ),
-                  ),
                 ValueListenableBuilder<bool>(
                   valueListenable: _habitsExpandedNotifier,
                   builder: (context, expanded, _) => ExpansionTile(
@@ -753,6 +764,100 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
           const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
         ],
       ),
+      ),
+    );
+  }
+
+  void _showDailyBriefing(BuildContext context) {
+    // a bit hacky to clear the dot immediately on open, but good UX
+    if (!_coachDismissed && _coachInsight != null) {
+      setState(() {
+        _coachDismissed = true;
+      });
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent, // for rounded corners
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                Icon(Icons.lightbulb, color: Colors.orange.shade700),
+                const SizedBox(width: 12),
+                const Text(
+                  'Daily Briefing',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            
+            if (_coachInsight != null)
+              CoachCard(
+                insight: _coachInsight!,
+                onDismiss: () => Navigator.pop(context), 
+              )
+            else 
+              const Text("No specific insights for today. You're doing great!"),
+              
+            if (_morningBrief != null) ...[
+               const SizedBox(height: 24),
+               const Text('FROM YESTERDAY', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0, fontSize: 12, color: Colors.grey)),
+               const SizedBox(height: 8),
+               Container(
+                 width: double.infinity,
+                 padding: const EdgeInsets.all(16),
+                 decoration: BoxDecoration(
+                   color: Theme.of(context).primaryColor.withOpacity(0.05),
+                   borderRadius: BorderRadius.circular(12),
+                   border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.2)),
+                 ),
+                 child: Text(
+                   _morningBrief!,
+                   style: const TextStyle(fontSize: 14, height: 1.5),
+                 ),
+               ),
+            ],
+
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () async {
+                  Navigator.pop(context); // close sheet
+                  await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                  await _loadUserSettings();
+                },
+                icon: const Icon(Icons.auto_awesome),
+                label: const Text('Generate AI Plan'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
       ),
     );
   }
