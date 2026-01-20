@@ -619,27 +619,18 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                   }
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.people),
-                tooltip: 'Community',
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialScreen())),
-              ),
-              IconButton(
-                icon: const Icon(Icons.access_time),
-                tooltip: 'Jump to Now',
-                onPressed: _scrollToNow,
-              ),
-              IconButton(
-                icon: const Icon(Icons.copy_all),
-                tooltip: 'Use Template',
-                onPressed: () async {
-                  await Navigator.pushNamed(context, '/template');
-                  if (mounted) setState(() {});
-                },
-              ),
               PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                tooltip: 'More Options',
                 onSelected: (value) async {
-                  if (value == 'clear_all') {
+                  if (value == 'jump_to_now') {
+                    _scrollToNow();
+                  } else if (value == 'community') {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialScreen()));
+                  } else if (value == 'template') {
+                    await Navigator.pushNamed(context, '/template');
+                    if (mounted) setState(() {});
+                  } else if (value == 'clear_all') {
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
@@ -673,12 +664,55 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                   const PopupMenuItem<String>(
+                    value: 'jump_to_now',
+                    child: Row(
+                      children: [
+                        Icon(Icons.access_time, size: 20),
+                        SizedBox(width: 12),
+                        Text('Jump to Now'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'community',
+                    child: Row(
+                      children: [
+                        Icon(Icons.people, size: 20),
+                        SizedBox(width: 12),
+                        Text('Community'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'template',
+                    child: Row(
+                      children: [
+                        Icon(Icons.copy_all, size: 20),
+                        SizedBox(width: 12),
+                        Text('Use Template'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem<String>(
                     value: 'clear_except_sleep',
-                    child: Text('Clear except Sleep'),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cleaning_services_outlined, size: 20),
+                        SizedBox(width: 12),
+                        Text('Clear except Sleep'),
+                      ],
+                    ),
                   ),
                   const PopupMenuItem<String>(
                     value: 'clear_all',
-                    child: Text('Clear All', style: TextStyle(color: Colors.red)),
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                        SizedBox(width: 12),
+                        Text('Clear All', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
                   ),
                 ],
               ),
