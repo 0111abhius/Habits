@@ -96,6 +96,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   String? _morningBrief;
   CoachInsight? _coachInsight;
   bool _coachDismissed = false;
+  bool _calendarVisible = false;
 
   @override
   void initState() {
@@ -106,6 +107,11 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     _scrollController = ScrollController(initialScrollOffset: _offsetCache[_currentDateKey] ?? 0)
       ..addListener(() {
         _offsetCache[_currentDateKey] = _scrollController.offset;
+        if (_calendarVisible && _scrollController.position.activity!.isScrolling) {
+          setState(() {
+            _calendarVisible = false;
+          });
+        }
       });
     _loadUserSettings();
     _loadDayComplete();
@@ -471,26 +477,16 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   }
 
   String _getDateTitle(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final input = DateTime(date.year, date.month, date.day);
-
-    if (input == today) return 'Today';
-    
-    final yesterday = today.subtract(const Duration(days: 1));
-    if (input == yesterday) return 'Yesterday';
-    
-    final tomorrow = today.add(const Duration(days: 1));
-    if (input == tomorrow) return 'Tomorrow';
-    
-    return DateFormat('EEE, MMM d').format(date);
+    return DateFormat('EEE').format(date);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: GestureDetector(
-        onHorizontalDragEnd: (details) {
+      body: Stack(
+        children: [
+          GestureDetector(
+            onHorizontalDragEnd: (details) {
           if (details.primaryVelocity == null) return;
           const double sensitivity = 300.0;
           
@@ -502,9 +498,9 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
               selectedDate = nextDay;
               _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
               _initStream();
-              _initStream();
               _loadDayComplete();
               _loadHistoricalData();
+              _calendarVisible = false;
             });
             // Reset scroll/cache
             _pendingScrollOffset = null;
@@ -517,9 +513,9 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
               selectedDate = prevDay;
               _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
               _initStream();
-              _initStream();
               _loadDayComplete();
               _loadHistoricalData();
+              _calendarVisible = false;
             });
             // Reset scroll/cache
             _pendingScrollOffset = null;
@@ -531,7 +527,24 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
         slivers: [
           SliverAppBar(
             pinned: true,
-            title: Text(_getDateTitle(selectedDate), style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _calendarVisible = !_calendarVisible;
+                });
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_getDateTitle(selectedDate), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _calendarVisible ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
             actions: [
               ValueListenableBuilder<bool>(
                 valueListenable: _dayCompleteNotifier,
@@ -706,29 +719,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
           SliverToBoxAdapter(
             child: Column(
               children: [
-                CalendarStrip(
-                  selectedDate: selectedDate,
-                  onDateSelected: (date) {
-                    setState(() {
-                      _blockKeys.clear();
-                      selectedDate = date;
-                      _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
-                      _initStream();
-                      _initStream();
-                      _loadDayComplete();
-                      _loadHistoricalData();
-                    });
-                    final key = DateFormat('yyyy-MM-dd').format(selectedDate);
-                    final double? saved = _offsetCache[key];
-                    if (saved != null) {
-                      _pendingScrollOffset = saved;
-                    } else {
-                      _pendingScrollOffset = null;
-                      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
-                    }
-                  },
-                  completedDates: _loggedDates,
-                ),
+                // CalendarStrip removed from here
                 ValueListenableBuilder<bool>(
                   valueListenable: _habitsExpandedNotifier,
                   builder: (context, expanded, _) => ExpansionTile(
@@ -764,6 +755,41 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
           const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
         ],
       ),
+      ),
+      if (_calendarVisible)
+        Positioned(
+          top: MediaQuery.of(context).padding.top + kToolbarHeight,
+          left: 0,
+          right: 0,
+          child: Material(
+            elevation: 4,
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: CalendarStrip(
+              selectedDate: selectedDate,
+              onDateSelected: (date) {
+                setState(() {
+                  _blockKeys.clear();
+                  selectedDate = date;
+                  _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+                  _initStream();
+                  _loadDayComplete();
+                  _loadHistoricalData();
+                  _calendarVisible = false;
+                });
+                final key = DateFormat('yyyy-MM-dd').format(selectedDate);
+                final double? saved = _offsetCache[key];
+                if (saved != null) {
+                  _pendingScrollOffset = saved;
+                } else {
+                  _pendingScrollOffset = null;
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
+                }
+              },
+              completedDates: _loggedDates,
+            ),
+          ),
+        ),
+      ],
       ),
     );
   }
