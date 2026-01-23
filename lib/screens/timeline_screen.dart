@@ -97,6 +97,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   CoachInsight? _coachInsight;
   bool _coachDismissed = false;
   bool _calendarVisible = false;
+  bool _isAIPlanning = false;
 
 
   Map<String, String> _sectionNotes = {}; // Morning, Afternoon, Evening notes
@@ -607,20 +608,40 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                       // Show AI Plan
                       return MediaQuery.of(context).size.width < 400
                           ? IconButton(
-                              icon: const Icon(Icons.auto_awesome),
+                              icon: _isAIPlanning 
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                  : const Icon(Icons.auto_awesome),
                               tooltip: 'AI Plan',
-                              onPressed: () async {
-                                await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                              onPressed: _isAIPlanning ? null : () async {
+                                await DayPlanningAssistant.show(
+                                  context, 
+                                  selectedDate, 
+                                  _cachedEntries, 
+                                  _activities,
+                                  onLoading: (isLoading) {
+                                    if (mounted) setState(() => _isAIPlanning = isLoading);
+                                  }
+                                );
                                 await _loadUserSettings();
                               },
                             )
                           : OutlinedButton.icon(
-                              onPressed: () async {
-                                await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                              onPressed: _isAIPlanning ? null : () async {
+                                await DayPlanningAssistant.show(
+                                  context, 
+                                  selectedDate, 
+                                  _cachedEntries, 
+                                  _activities,
+                                  onLoading: (isLoading) {
+                                    if (mounted) setState(() => _isAIPlanning = isLoading);
+                                  }
+                                );
                                 await _loadUserSettings();
                               },
-                              icon: const Icon(Icons.auto_awesome, size: 18),
-                              label: const Text('AI Plan'),
+                              icon: _isAIPlanning 
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                  : const Icon(Icons.auto_awesome, size: 18),
+                              label: Text(_isAIPlanning ? 'Planning...' : 'AI Plan'),
                               style: OutlinedButton.styleFrom(
                                 visualDensity: VisualDensity.compact,
                                 side: BorderSide(color: Theme.of(context).primaryColor),

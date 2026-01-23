@@ -11,7 +11,7 @@ import '../widgets/ai_planning_dialogs.dart';
 import '../main.dart'; // for getFirestore()
 
 class DayPlanningAssistant {
-  static Future<void> show(BuildContext context, DateTime date, List<TimelineEntry> currentEntries, List<String> availableActivities) async {
+  static Future<void> show(BuildContext context, DateTime date, List<TimelineEntry> currentEntries, List<String> availableActivities, {Function(bool)? onLoading}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     String defaultGoal = '';
     TimeOfDay wakeTime = const TimeOfDay(hour: 7, minute: 0);
@@ -60,7 +60,9 @@ class DayPlanningAssistant {
     // 2. Logic Fork
     if (isFull && defaultGoal.isNotEmpty) {
         // Auto-Feedback Path
-        await _showFeedbackDialog(context, date, currentEntries, availableActivities, defaultGoal, isAuto: true);
+        onLoading?.call(true);
+        await _showFeedbackDialog(context, date, currentEntries, availableActivities, defaultGoal, isAuto: true, onLoading: onLoading);
+        onLoading?.call(false);
     } else {
         // Standard Path
         final goal = await AIGoalDialog.show(
@@ -71,35 +73,30 @@ class DayPlanningAssistant {
         );
 
         if (goal != null) {
-           // Re-check fullness? Or just generate if not full?
-           // If manually entered, we can probably respect the flow. 
-           // If we ALREADY checked fullness and it WASN'T full, we go straight to plan.
-           // If it WAS full but no default goal, we flow here. Then we check fullness again?
-           // Yes, keep original logic for manual entry fallback.
-           
+           onLoading?.call(true);
            if (isFull) {
-               await _showFeedbackDialog(context, date, currentEntries, availableActivities, goal, isAuto: false);
+               await _showFeedbackDialog(context, date, currentEntries, availableActivities, goal, isAuto: false, onLoading: onLoading);
            } else {
-               await _generatePlan(context, date, currentEntries, availableActivities, goal);
+               await _generatePlan(context, date, currentEntries, availableActivities, goal, onLoading: onLoading);
            }
+           onLoading?.call(false);
         }
     }
   }
 
-  static Future<void> _showFeedbackDialog(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {required bool isAuto}) async {
-      // Loading
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => const Center(child: CircularProgressIndicator()),
-      );
-
+  static Future<void> _showFeedbackDialog(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {required bool isAuto, Function(bool)? onLoading}) async {
+      // No blocking dialog here, rely on caller or callback
+      // But we need to await the AI service. The caller (show) already set loading=true.
+      
       final currentPlan = _serializePlan(entries, []);
       final ai = AIService();
       final jsonResponse = await ai.getPlanFeedback(currentPlan: currentPlan, goal: goal);
       
+      // Loading is managed by caller for the initial fetch, BUT if we proceed to edit, we need to manage it again?
+      // Actually, if we return from here, the caller sets loading=false.
+      // So we should just do the fetch here.
+      
       if (!context.mounted) return;
-      Navigator.pop(context); // close loading
 
       int score = 0;
       String analysis = "Unable to analyze plan.";
@@ -176,7 +173,20 @@ class DayPlanningAssistant {
         ),
       ).then((proceed) async {
          if (proceed == true) {
-             // Open formatted Goal Dialog to allow editing
+             // We need to pause loading management here because we are showing a dialog again?
+             // Actually, showFeedbackDialog was called with loading=true.
+             // But we just finished the fetch.
+             // And we popped the dialog.
+             // If we proceed, we need to show Goal Dialog (blocking input) -> then generate (async).
+             // Caller expects us to return when EVERYTHING is done?
+             // No, caller awaits this method. 
+             // We must signal loading=false when showing the dialog so user can interact?
+             // Wait, if loading=true, the BUTTON is a spinner. It doesn't block the UI (that's the requirement).
+             // But we are showing a modal dialog (Goal Alignment).
+             // Showing a modal dialog while the button is spinning is fine, but usually we stop spinning when user input is needed.
+             // So:
+             onLoading?.call(false); // Stop spinning while user reviews feedback
+             
              final newGoal = await AIGoalDialog.show(
                 context, 
                 title: 'Refine Goal', 
@@ -185,13 +195,19 @@ class DayPlanningAssistant {
              );
              
              if (newGoal != null) {
-                 await _generatePlan(context, date, entries, activities, newGoal);
+                 onLoading?.call(true); // Restart spinning
+                 await _generatePlan(context, date, entries, activities, newGoal, onLoading: onLoading);
+                 // onLoading?.call(false); // Logic fork in caller will handle this?
+                 // No, caller awaits _showFeedbackDialog. Caller will turn off loading after return.
+                 // So we can leave it true here, or toggle it?
+                 // Caller: onLoading(true) -> await feedback -> onLoading(false).
+                 // If we toggle inside, caller might toggle again. idempotent callback is preferred.
              }
          }
       });
   }
 
-  static String _serializePlan(List<TimelineEntry> entries, List<dynamic> tasks) { // simplified signature for now
+  static String _serializePlan(List<TimelineEntry> entries, List<dynamic> tasks) {
       final buffer = StringBuffer();
       entries.sort((a,b)=>a.startTime.compareTo(b.startTime));
       for (final e in entries) {
@@ -201,17 +217,12 @@ class DayPlanningAssistant {
            buffer.writeln('$time - $act');
         }
       }
-      // Add tasks summary if needed, for feedback we might skip tasks or include them if passed
       return buffer.toString().isEmpty ? '(No activities planned yet)' : buffer.toString();
   }
 
-  static Future<void> _generatePlan(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator()),
-    );
-
+  static Future<void> _generatePlan(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {Function(bool)? onLoading}) async {
+    // No blocking dialog
+    
     try {
       // Serialize current plan
       final buffer = StringBuffer();
@@ -229,7 +240,11 @@ class DayPlanningAssistant {
         }
       }
       
-      // Fetch Tasks for Today
+      // Fetch Tasks logic (omitted for brevity, same as before) ...
+      // Can we keep the same logic or do we need to replace it all?
+      // I'll assume we need to replace the loading part mainly. 
+      // The snippet below continues the logic.
+   
       // Fetch Tasks
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
@@ -239,40 +254,27 @@ class DayPlanningAssistant {
             .where('userId', isEqualTo: uid)
             .where('isCompleted', isEqualTo: false)
             .get();
-        
         final allTasks = taskSnap.docs.map((d) => Task.fromFirestore(d)).toList();
         
-        // Sorting Logic:
-        // 1. Overdue (scheduled before today)
-        // 2. Today (isToday=true OR scheduledDate=today)
-        // 3. Tomorrow/Future (scheduledDate > today) -> Maybe exclude or put last?
-        // 4. No Date / Inbox
-
+        // Sorting Logic... same as previous
         final now = DateTime.now();
         final todayStart = DateTime(now.year, now.month, now.day);
-        final tomorrowStart = todayStart.add(const Duration(days: 1));
-
+        
         final List<Task> highPriority = [];
         final List<Task> otherTasks = [];
 
         for (final t in allTasks) {
            bool isOverdue = false;
            bool isToday = t.isToday;
-           
            if (t.scheduledDate != null) {
              final d = DateTime(t.scheduledDate!.year, t.scheduledDate!.month, t.scheduledDate!.day);
              if (d.isBefore(todayStart)) isOverdue = true;
              if (d == todayStart) isToday = true;
            }
-
-           if (isOverdue || isToday) {
-             highPriority.add(t);
-           } else {
-             otherTasks.add(t);
-           }
+           if (isOverdue || isToday) highPriority.add(t);
+           else otherTasks.add(t);
         }
 
-        // Add to buffer
         if (highPriority.isNotEmpty) {
            buffer.writeln('\nURGENT / TODAY TITLES:');
            for (final t in highPriority) {
@@ -280,11 +282,8 @@ class DayPlanningAssistant {
               buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)$due');
            }
         }
-
         if (otherTasks.isNotEmpty) {
            buffer.writeln('\nOTHER AVAILABLE TASKS (Select if relevant to goal):');
-           // Limit others to prevent context overflow (e.g. top 15 most recent or just standard)
-           // For now take top 15
            for (final t in otherTasks.take(15)) {
               buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)');
            }
@@ -301,8 +300,13 @@ class DayPlanningAssistant {
       );
 
       if (!context.mounted) return;
-      Navigator.pop(context); // loading
-
+      // No loading dialog to pop
+      
+      // Stop loading manually if we are preparing to show result?
+      onLoading?.call(false); 
+      // Actually caller handles it, but we might want to ensure button stops spinning when dialog shows?
+      // If we stop spinning here, then caller stops spinning again later. Idempotent.
+      
       try {
         final data = jsonDecode(jsonStr) as Map<String, dynamic>;
         if (data.containsKey('error')) {
@@ -310,7 +314,6 @@ class DayPlanningAssistant {
           return;
         }
 
-        // Use shared robust detection
         data['newActivities'] = AIService.detectNewActivities(data, activities);
 
         AIPlanReviewDialog.show(context, data, (schedule, newActivities) async {
@@ -322,7 +325,8 @@ class DayPlanningAssistant {
       }
     } catch (e) {
       if (context.mounted) {
-        Navigator.pop(context);
+        // Stop loading on error
+        onLoading?.call(false);
         _showError(context, 'Error: $e');
       }
     }
