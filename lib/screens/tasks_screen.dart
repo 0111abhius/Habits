@@ -72,27 +72,28 @@ class _TasksScreenState extends State<TasksScreen> {
       final doc = await getFirestore().collection('user_settings').doc(uid).get();
       if (doc.exists) {
         final settings = UserSettings.fromMap(doc.data()!);
-        setState(() {
-          _folders = settings.taskFolders;
-          _foldersLoaded = true;
-          _defaultFolderName = settings.defaultFolderName;
-          _folderActivities = settings.folderActivities;
-          _recentActivities = settings.customActivities; // Use user defined as recent? 
-          // Actually, we usually fetch ALL predefined + custom.
-          _allActivities = [...kDefaultActivities, ...settings.customActivities];
-          
-          // Initialize expansion states if new
-          for (var f in _folders) {
-            _folderExpansions.putIfAbsent(f, () => false); // collapsed by default? or true?
-          }
-          _folderExpansions.putIfAbsent(_defaultFolderName, () => true);
-        });
+        if (mounted) {
+          setState(() {
+            _folders = settings.taskFolders;
+            _foldersLoaded = true;
+            _defaultFolderName = settings.defaultFolderName;
+            _folderActivities = settings.folderActivities;
+            _recentActivities = settings.customActivities; 
+            _allActivities = [...kDefaultActivities, ...settings.customActivities];
+            
+            // Initialize expansion states if new
+            for (var f in _folders) {
+              _folderExpansions.putIfAbsent(f, () => false); 
+            }
+            _folderExpansions.putIfAbsent(_defaultFolderName, () => true);
+          });
+        }
       } else {
-        setState(() => _foldersLoaded = true);
+        if (mounted) setState(() => _foldersLoaded = true);
       }
     } catch (e) {
       print('Error loading folders: $e');
-      setState(() => _foldersLoaded = true);
+      if (mounted) setState(() => _foldersLoaded = true);
     }
   }
 

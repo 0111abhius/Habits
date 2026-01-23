@@ -6,6 +6,7 @@ class DailyLog {
   final DateTime lastUpdated;
   final DateTime? lastPlannedAt; // When was the plan first created/substantially modified?
   final int? score; // Cache the score here for easy access
+  final Map<String, String>? sectionNotes;
 
   DailyLog({
     required this.dateStr,
@@ -13,6 +14,7 @@ class DailyLog {
     required this.lastUpdated,
     this.lastPlannedAt,
     this.score,
+    this.sectionNotes,
   });
 
   Map<String, dynamic> toMap() {
@@ -22,6 +24,7 @@ class DailyLog {
       'lastUpdated': Timestamp.fromDate(lastUpdated),
       if (lastPlannedAt != null) 'lastPlannedAt': Timestamp.fromDate(lastPlannedAt!),
       if (score != null) 'score': score,
+      if (sectionNotes != null) 'sectionNotes': sectionNotes,
     };
   }
 
@@ -33,6 +36,7 @@ class DailyLog {
       lastUpdated: (data['lastUpdated'] as Timestamp?)?.toDate() ?? DateTime.now(),
       lastPlannedAt: (data['lastPlannedAt'] as Timestamp?)?.toDate(),
       score: data['score'] as int?,
+      sectionNotes: (data['sectionNotes'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())),
     );
   }
 }

@@ -185,10 +185,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
   @override
   Widget build(BuildContext context) {
     // Section Title
-    String? sectionTitle;
-    if (widget.hour == 6) sectionTitle = 'Morning';
-    if (widget.hour == 12) sectionTitle = 'Afternoon';
-    if (widget.hour == 18) sectionTitle = 'Evening';
+
 
     final bool isSleepRow = widget.entry00.activity == 'Sleep';
 
@@ -228,21 +225,7 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
       ),
     );
 
-    if (sectionTitle == null) {
-      return container;
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(sectionTitle,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-        ),
-        container,
-      ],
-    );
+    return container;
   }
 
   Widget _buildSubBlock(TimelineEntry entry, int minute) {

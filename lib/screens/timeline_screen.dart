@@ -98,6 +98,11 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   bool _coachDismissed = false;
   bool _calendarVisible = false;
 
+
+  Map<String, String> _sectionNotes = {}; // Morning, Afternoon, Evening notes
+  final Map<String, TextEditingController> _sectionControllers = {};
+  final Map<String, Timer> _sectionDebouncers = {};
+
   @override
   void initState() {
     super.initState();
@@ -118,9 +123,13 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     _loadLoggedDates();
     _loadHistoricalData();
     _loadCoachInsight();
-    
-    // Check for day changes periodically (every minute) to handle user staying in app across midnight
-    // _dayCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) => _checkForDayChange());
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    // Clear global keys on hot reload to prevent "Duplicate GlobalKey" issues if widget tree structure changes
+    _blockKeys.clear();
   }
 
   @override
@@ -131,6 +140,8 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     _sleepTimeController.dispose();
     _wakeTimeController.dispose();
     _pendingScrollOffset=null;
+    for (var c in _sectionControllers.values) c.dispose();
+    for (var t in _sectionDebouncers.values) t.cancel();
     super.dispose();
   }
 
@@ -993,9 +1004,54 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
 
           // Section titles (Morning/Afternoon/Evening)
           String? sectionTitle;
-          if(hour==6) sectionTitle = 'Morning';
-          if(hour==12) sectionTitle = 'Afternoon';
-          if(hour==18) sectionTitle = 'Evening';
+          if (wakeTime != null) {
+            if (hour == wakeTime!.hour) sectionTitle = 'Morning';
+          } else {
+             if (hour == 6) sectionTitle = 'Morning';
+          }
+          if (hour == 12) sectionTitle = 'Afternoon';
+          if (hour == 18) sectionTitle = 'Evening';
+
+          Widget? sectionHeader;
+          if (sectionTitle != null) {
+             _sectionControllers.putIfAbsent(sectionTitle, () => TextEditingController(text: _sectionNotes[sectionTitle] ?? ''));
+             final controller = _sectionControllers[sectionTitle]!;
+
+             sectionHeader = Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Material(
+                  color: Colors.transparent,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(sectionTitle, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: TextField(
+                            controller: controller,
+                            onChanged: (val) => _onSectionNoteChanged(sectionTitle!, val),
+                            decoration: const InputDecoration(
+                              hintText: 'Add note...',
+                              hintStyle: TextStyle(fontSize: 12, color: Colors.grey),
+                              border: InputBorder.none,
+                              isDense: true,
+                            ),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                            maxLines: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+             );
+          }
 
           TimelineEntry _blank(int minute) {
             final start=DateTime(selectedDate.year,selectedDate.month,selectedDate.day,hour,minute);
@@ -1080,10 +1136,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal:16,vertical:8),
-                  child: Text(sectionTitle, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                ),
+                if (sectionHeader != null) sectionHeader,
                 tile,
               ],
             );
@@ -1378,10 +1431,38 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
       } else {
         _dailyScore = null;
       }
+      
+      if (doc.data()!.containsKey('sectionNotes')) {
+         final sn = doc.data()!['sectionNotes'] as Map<String, dynamic>;
+         _sectionNotes = sn.map((k, v) => MapEntry(k, v.toString()));
+      } else {
+        _sectionNotes = {};
+      }
+      
+      // Sync controllers
+      // We only recreate/update controllers if they are not currently being edited?
+      // Actually simpler: just update text if different to avoid cursor jumps if user typing (cached logic)
+      // modifying state here is fine as we are in _loadDayComplete
+      for (var key in ['Morning', 'Afternoon', 'Evening']) {
+         final txt = _sectionNotes[key] ?? '';
+         if (!_sectionControllers.containsKey(key)) {
+            _sectionControllers[key] = TextEditingController(text: txt);
+         } else {
+            if (_sectionControllers[key]!.text != txt) {
+               // Only update if not focused? Or rely on debouncer not firing yet?
+               // If this load happens while user is typing (e.g. background refresh), it might clobber.
+               // But _loadDayComplete usually happens on day switch or explicit refresh.
+               _sectionControllers[key]!.text = txt;
+            }
+         }
+      }
+
     } else {
       _dayCompleteNotifier.value = false;
       _lastPlannedAt = null;
       _dailyScore = null;
+      _sectionNotes = {};
+      for (var c in _sectionControllers.values) c.clear();
     }
     if (mounted) setState(() {});
   }
@@ -1807,5 +1888,27 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
       await batch.commit();
       // Optimistic update handled by listener usually, but we can verify
     }
+  }
+
+  void _onSectionNoteChanged(String section, String val) {
+    _sectionNotes[section] = val; // Update local state immediately for UI consistency
+    
+    _sectionDebouncers[section]?.cancel();
+    _sectionDebouncers[section] = Timer(const Duration(milliseconds: 1000), () async {
+       final uid = FirebaseAuth.instance.currentUser?.uid;
+       if (uid != null) {
+          // Clean up empty notes to save space? Or keep empty string?
+          if (val.isEmpty) {
+             _sectionNotes.remove(section);
+          }
+          
+          await getFirestore()
+              .collection('daily_logs')
+              .doc(uid)
+              .collection('logs')
+              .doc(_dateStr(selectedDate))
+              .set({'sectionNotes': _sectionNotes}, SetOptions(merge: true));
+       }
+    });
   }
 }
