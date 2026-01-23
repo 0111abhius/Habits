@@ -66,18 +66,20 @@ class AIPlanReviewDialog extends StatefulWidget {
   final Map<String, dynamic> data;
   final Future<void> Function(Map<String, String> schedule, List<String> newActivities) onApply;
   final Map<String, String>? taskActivities;
+  final Map<String, String> originalSchedule;
 
   const AIPlanReviewDialog({
     super.key,
     required this.data,
     required this.onApply,
     this.taskActivities,
+    this.originalSchedule = const {},
   });
 
-  static Future<void> show(BuildContext context, Map<String, dynamic> data, Future<void> Function(Map<String, String>, List<String>) onApply, {Map<String, String>? taskActivities}) {
+  static Future<void> show(BuildContext context, Map<String, dynamic> data, Future<void> Function(Map<String, String>, List<String>) onApply, {Map<String, String>? taskActivities, Map<String, String> originalSchedule = const {}}) {
     return showDialog(
       context: context,
-      builder: (ctx) => AIPlanReviewDialog(data: data, onApply: onApply, taskActivities: taskActivities),
+      builder: (ctx) => AIPlanReviewDialog(data: data, onApply: onApply, taskActivities: taskActivities, originalSchedule: originalSchedule),
     );
   }
 
@@ -88,7 +90,9 @@ class AIPlanReviewDialog extends StatefulWidget {
 class _ScheduleItem {
   TextEditingController timeCtrl;
   TextEditingController activityCtrl;
-  _ScheduleItem(String time, String activity) 
+  String? originalActivity;
+
+  _ScheduleItem(String time, String activity, {this.originalActivity}) 
     : timeCtrl = TextEditingController(text: time),
       activityCtrl = TextEditingController(text: activity);
   
@@ -104,12 +108,16 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
   late List<String> newActs;
   late String reasoning;
   late Set<String> selectedNewActs;
+  bool _showAll = false;
 
   @override
   void initState() {
     super.initState();
     final initialSchedule = Map<String, String>.from(widget.data['schedule'] ?? {});
-    _items = initialSchedule.entries.map((e) => _ScheduleItem(e.key, e.value)).toList();
+    _items = initialSchedule.entries.map((e) {
+        final original = widget.originalSchedule[e.key];
+        return _ScheduleItem(e.key, e.value, originalActivity: original);
+    }).toList();
     
     newActs = List<String>.from(widget.data['newActivities'] ?? []);
     reasoning = widget.data['reasoning'] ?? '';
@@ -139,6 +147,14 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Filter items based on _showAll
+    final visibleItems = _items.where((item) {
+        if (_showAll) return true;
+        // Show if modified (different from original) OR original was empty
+        if (item.originalActivity == null || item.originalActivity != item.activityCtrl.text) return true;
+        return false;
+    }).toList();
+
     return AlertDialog(
       title: const Text('AI Review'),
       content: SizedBox(
@@ -175,6 +191,19 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
                           ),
                           const Divider(),
                         ],
+                        // Toggle Show All
+                        if (widget.originalSchedule.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Row(
+                              children: [
+                                Text('${visibleItems.length} changes shown'),
+                                const Spacer(),
+                                const Text('Show All'),
+                                Switch(value: _showAll, onChanged: (v) => setState(() => _showAll = v)),
+                              ],
+                            ),
+                          ),
                         Expanded(
                           child: ListView.builder(
                             itemCount: _items.length + 1, // +1 for Add Button
@@ -188,6 +217,17 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
                               }
                               
                               final item = _items[i];
+                              
+                              // Check visibility locally to maintain index integrity for removal?
+                              // Actually for ListView.builder we usually want exact indices.
+                              // So better to filter the list and use that index?
+                              // But removing item requires original index.
+                              // Let's iterate original list but return SizedBox.shrink for hidden items if we simply hide them
+                              // OR use the filtered list for rendering.
+                              // Using logic:
+                              final isVisible = _showAll || (item.originalActivity == null || item.originalActivity != item.activityCtrl.text);
+                              if (!isVisible) return const SizedBox.shrink();
+
                               return Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 child: Row(
@@ -239,7 +279,7 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
                                     ),
                                     IconButton(
                                       icon: const Icon(Icons.close, color: Colors.grey, size: 20),
-                                      onPressed: () => _removeItem(i),
+                                      onPressed: () => _removeItem(i), // Removing by original index is correct here? Yes loop is over _items
                                       tooltip: 'Remove',
                                     ),
                                   ],
@@ -393,7 +433,14 @@ class _AIPlanReviewDialogState extends State<AIPlanReviewDialog> {
         // Dispose old items
         for (var i in _items) { i.dispose(); }
         // Create new items
-        _items = newSchedule.entries.map((e) => _ScheduleItem(e.key, e.value)).toList();
+        // RETAIN ORIGINAL INFO?
+        // If refined, it's basically a new plan, so diffing against original probably still makes sense?
+        // Or should we reset original?
+        // Let's keep original to show what changed from start.
+        _items = newSchedule.entries.map((e) {
+             final original = widget.originalSchedule[e.key];
+             return _ScheduleItem(e.key, e.value, originalActivity: original);
+        }).toList();
         
         newActs = newNewActs;
         reasoning = newReasoning;

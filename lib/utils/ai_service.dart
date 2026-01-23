@@ -376,4 +376,37 @@ Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
       return {"error": "$e"};
     }
   }
+  Future<String> getPlanFeedback({
+    required String currentPlan,
+    required String goal,
+  }) async {
+    final prompt = '''
+You are a productivity coach.
+The user's schedule is mostly full. They want to achieve: "$goal".
+Analyze their current plan.
+1. Estimate a "Goal Alignment Score" (0-100%) based on how well the current activities serve this goal.
+2. Provide 2-3 very concise, high-impact suggestions to improve alignment (max 10 words each).
+
+CURRENT PLAN:
+$currentPlan
+
+IMPORTANT: Return strict JSON:
+{
+  "score": 75,
+  "analysis": "Brief reason for the score (1 sentence).",
+  "suggestions": ["Suggestion 1", "Suggestion 2"]
+}
+Do not return markdown. Just the JSON string.
+''';
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await _model.generateContent(content);
+      var text = response.text ?? '{}';
+      text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+      return text;
+    } catch (e) {
+      return '{"error": "$e"}';
+    }
+  }
 }

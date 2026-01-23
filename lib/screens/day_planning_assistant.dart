@@ -14,27 +14,195 @@ class DayPlanningAssistant {
   static Future<void> show(BuildContext context, DateTime date, List<TimelineEntry> currentEntries, List<String> availableActivities) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     String defaultGoal = '';
-    
+    TimeOfDay wakeTime = const TimeOfDay(hour: 7, minute: 0);
+    TimeOfDay sleepTime = const TimeOfDay(hour: 23, minute: 0);
+
     if (uid != null) {
       try {
         final doc = await getFirestore().collection('user_settings').doc(uid).get();
         if (doc.exists) {
            final settings = UserSettings.fromMap(doc.data()!);
            defaultGoal = settings.goalText;
+           wakeTime = settings.wakeTime;
+           sleepTime = settings.sleepTime;
         }
       } catch (_) {}
     }
 
-    final goal = await AIGoalDialog.show(
-      context, 
-      title: 'AI Day Planner', 
-      promptLabel: 'Planning for ${DateFormat('MMM d').format(date)}.\nWhat is your main goal?',
-      initialGoal: defaultGoal,
-    );
+    // 1. Calculate Fullness heuristics upfront
+    int wakeMin = wakeTime.hour * 60 + wakeTime.minute;
+    int sleepMin = sleepTime.hour * 60 + sleepTime.minute;
+    if (sleepMin < wakeMin) sleepMin += 24 * 60;
+    
+    final int activeDuration = sleepMin - wakeMin;
+    int filledMinutes = 0;
+    
+    for (final e in currentEntries) {
+         final act = e.planactivity.isNotEmpty ? e.planactivity : e.activity;
+         if (act.isEmpty || act == 'Sleep') continue;
+         
+         int startM = e.startTime.hour * 60 + e.startTime.minute;
+         int endM = e.endTime.hour * 60 + e.endTime.minute;
+         if (endM == 0 && startM != 0) endM = 1440;
+         if (endM < startM) endM += 1440;
 
-    if (goal != null) {
-      _generatePlan(context, date, currentEntries, availableActivities, goal);
+         final int iterStart = startM < wakeMin ? wakeMin : startM;
+         final int iterEnd = endM > sleepMin ? sleepMin : endM;
+         
+         if (iterEnd > iterStart) {
+           filledMinutes += (iterEnd - iterStart);
+         }
     }
+
+    final int freeMinutes = activeDuration - filledMinutes;
+    final bool isFull = freeMinutes <= 180; // <= 3 hours free
+
+    // 2. Logic Fork
+    if (isFull && defaultGoal.isNotEmpty) {
+        // Auto-Feedback Path
+        await _showFeedbackDialog(context, date, currentEntries, availableActivities, defaultGoal, isAuto: true);
+    } else {
+        // Standard Path
+        final goal = await AIGoalDialog.show(
+          context, 
+          title: 'AI Day Planner', 
+          promptLabel: 'Planning for ${DateFormat('MMM d').format(date)}.\nWhat is your main goal?',
+          initialGoal: defaultGoal,
+        );
+
+        if (goal != null) {
+           // Re-check fullness? Or just generate if not full?
+           // If manually entered, we can probably respect the flow. 
+           // If we ALREADY checked fullness and it WASN'T full, we go straight to plan.
+           // If it WAS full but no default goal, we flow here. Then we check fullness again?
+           // Yes, keep original logic for manual entry fallback.
+           
+           if (isFull) {
+               await _showFeedbackDialog(context, date, currentEntries, availableActivities, goal, isAuto: false);
+           } else {
+               await _generatePlan(context, date, currentEntries, availableActivities, goal);
+           }
+        }
+    }
+  }
+
+  static Future<void> _showFeedbackDialog(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {required bool isAuto}) async {
+      // Loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const Center(child: CircularProgressIndicator()),
+      );
+
+      final currentPlan = _serializePlan(entries, []);
+      final ai = AIService();
+      final jsonResponse = await ai.getPlanFeedback(currentPlan: currentPlan, goal: goal);
+      
+      if (!context.mounted) return;
+      Navigator.pop(context); // close loading
+
+      int score = 0;
+      String analysis = "Unable to analyze plan.";
+      List<String> suggestions = [];
+
+      try {
+        final data = jsonDecode(jsonResponse);
+        if (data is Map<String, dynamic>) {
+           score = data['score'] as int? ?? 0;
+           analysis = data['analysis'] as String? ?? '';
+           suggestions = List<String>.from(data['suggestions'] ?? []);
+        }
+      } catch (e) {
+        analysis = "AI Analysis Error: $jsonResponse";
+      }
+
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Goal Alignment'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isAuto && goal.isNotEmpty) ...[
+                   Text('Based on goal: "$goal"', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                   const SizedBox(height: 8),
+                ],
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      height: 80, width: 80,
+                      child: CircularProgressIndicator(
+                        value: score / 100,
+                        backgroundColor: Colors.grey[200],
+                        strokeWidth: 8,
+                        color: score > 70 ? Colors.green : (score > 40 ? Colors.orange : Colors.red),
+                      ),
+                    ),
+                    Text('$score%', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(analysis, textAlign: TextAlign.center, style: const TextStyle(fontStyle: FontStyle.italic)),
+                const SizedBox(height: 16),
+                if (suggestions.isNotEmpty) ...[
+                   const Align(alignment: Alignment.centerLeft, child: Text('Suggestions:', style: TextStyle(fontWeight: FontWeight.bold))),
+                   const SizedBox(height: 8),
+                   ...suggestions.map((s) => Padding(
+                     padding: const EdgeInsets.only(bottom: 4.0),
+                     child: Row(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
+                         Expanded(child: Text(s)),
+                       ],
+                     ),
+                   )),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Dismiss'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true), // Return true to proceed
+              child: const Text('Proceed to Edit'),
+            ),
+          ],
+        ),
+      ).then((proceed) async {
+         if (proceed == true) {
+             // Open formatted Goal Dialog to allow editing
+             final newGoal = await AIGoalDialog.show(
+                context, 
+                title: 'Refine Goal', 
+                promptLabel: 'Edit your goal or context for replanning:',
+                initialGoal: goal,
+             );
+             
+             if (newGoal != null) {
+                 await _generatePlan(context, date, entries, activities, newGoal);
+             }
+         }
+      });
+  }
+
+  static String _serializePlan(List<TimelineEntry> entries, List<dynamic> tasks) { // simplified signature for now
+      final buffer = StringBuffer();
+      entries.sort((a,b)=>a.startTime.compareTo(b.startTime));
+      for (final e in entries) {
+        final time = DateFormat('HH:mm').format(e.startTime);
+        final act = e.planactivity.isNotEmpty ? e.planactivity : e.activity;
+        if (act.isNotEmpty) {
+           buffer.writeln('$time - $act');
+        }
+      }
+      // Add tasks summary if needed, for feedback we might skip tasks or include them if passed
+      return buffer.toString().isEmpty ? '(No activities planned yet)' : buffer.toString();
   }
 
   static Future<void> _generatePlan(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal) async {
@@ -49,11 +217,15 @@ class DayPlanningAssistant {
       final buffer = StringBuffer();
       // sort entries
       entries.sort((a,b)=>a.startTime.compareTo(b.startTime));
+      // Capture original schedule for diffing later
+      final Map<String, String> originalSchedule = {};
+
       for (final e in entries) {
         final time = DateFormat('HH:mm').format(e.startTime);
         final act = e.planactivity.isNotEmpty ? e.planactivity : e.activity;
         if (act.isNotEmpty) {
            buffer.writeln('$time - $act');
+           originalSchedule[time] = act;
         }
       }
       
@@ -143,7 +315,7 @@ class DayPlanningAssistant {
 
         AIPlanReviewDialog.show(context, data, (schedule, newActivities) async {
              await _applyPlan(context, date, schedule, newActivities);
-        });
+        }, originalSchedule: originalSchedule);
 
       } catch (e) {
         _showError(context, 'Failed to parse AI response.');
