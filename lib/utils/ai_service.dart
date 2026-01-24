@@ -140,20 +140,25 @@ INSTRUCTIONS:
 2. If a time block should be free, label it explicitly (e.g. "Free Time", "Break", "Relax").
 3. Optimize the schedule to achieve the goal.
 4. IMPORTANT: All start times MUST be at :00 or :30 minutes. Do NOT suggest times like 08:15 or 08:45. Minimum block size is 30 minutes.
-5. Return strict JSON.
+5. If a task from the list has "[Activity: Name]" appended (e.g. "Finish Report [Activity: Work]"):
+   - Set the "activity" field to "Name" (e.g. "Work").
+   - Set the "taskTitle" field to "Finish Report".
+   - Set the "reason" field to a short justification (e.g. "Overdue" or "High Priority").
+   - If no [Activity: ...] is present, use the Task Title as the "activity".
+6. Return strict JSON.
 
 IMPORTANT: You must return the response in strict JSON format.
 The JSON must have this structure:
 {
   "schedule": {
-    "08:00": { "activity": "Activity Name", "reason": "Why this fits the goal or fills a gap" },
-    "09:30": { "activity": "Activity Name", "reason": "Why this change is suggested" }
+    "08:00": { "activity": "Activity Name", "reason": "Justification", "taskTitle": "Optional Task Name" },
+    "09:30": { "activity": "Activity Name", "reason": "Justification" }
   },
   "newActivities": ["New Activity 1", "New Activity 2"],
   "reasoning": "Overall explanation of the plan..."
 }
 "schedule" keys must be "HH:mm" strings (24-hour format). 
-Each value in "schedule" MUST be an object with "activity" and "reason".
+Each value in "schedule" MUST be an object with "activity" and "reason" (and optionally "taskTitle").
 "reason": A short, convincing reason (max 10 words). If changing an existing activity, explain why. If filling a gap, explain alignment.
 "newActivities" should list any activities suggested that are NOT in the EXISTING ACTIVITIES list.
 "reasoning" should be a concise summary of the plan.

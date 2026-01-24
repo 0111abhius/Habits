@@ -211,22 +211,20 @@ class DayPlanningAssistant {
   }
 
   static Future<Map<String, AIProposal>?> _generatePlan(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {Function(bool)? onLoading, required String wakeTime, required String sleepTime}) async {
-    // No blocking dialog
+    print("DEBUG: _generatePlan called");
+    final Set<String> knownTaskTitles = {};
     
     try {
       // Serialize current plan
       final buffer = StringBuffer();
       // sort entries
       entries.sort((a,b)=>a.startTime.compareTo(b.startTime));
-      // Capture original schedule for diffing later
-      final Map<String, String> originalSchedule = {};
 
       for (final e in entries) {
         final time = DateFormat('HH:mm').format(e.startTime);
         final act = e.planactivity.isNotEmpty ? e.planactivity : e.activity;
         if (act.isNotEmpty) {
            buffer.writeln('$time - $act');
-           originalSchedule[time] = act;
         }
       }
       
@@ -264,13 +262,17 @@ class DayPlanningAssistant {
            buffer.writeln('\nURGENT / TODAY TITLES:');
            for (final t in highPriority) {
               final due = t.scheduledDate != null && t.scheduledDate!.isBefore(todayStart) ? ' [OVERDUE]' : '';
-              buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)$due');
+              final actInfo = (t.activity != null && t.activity!.isNotEmpty) ? ' [Activity: ${t.activity}]' : '';
+              buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)$due$actInfo');
+              knownTaskTitles.add(t.title);
            }
         }
         if (otherTasks.isNotEmpty) {
            buffer.writeln('\nOTHER AVAILABLE TASKS (Select if relevant to goal):');
            for (final t in otherTasks.take(15)) {
-              buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)');
+              final actInfo = (t.activity != null && t.activity!.isNotEmpty) ? ' [Activity: ${t.activity}]' : '';
+              buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)$actInfo');
+              knownTaskTitles.add(t.title);
            }
         }
       }
@@ -286,111 +288,100 @@ class DayPlanningAssistant {
         sleepTime: sleepTime,
       );
 
-      print("DEBUG: AI Raw Response: $jsonStr");      if (!context.mounted) return null;
-      // No loading dialog to pop
+      print("DEBUG: AI Raw Response: $jsonStr");
       
+      if (!context.mounted) return null;
       onLoading?.call(false); 
       
-      try {
-        final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-        if (data.containsKey('error')) {
-          _showError(context, 'AI Error: ${data['error']}');
-          return null;
-        }
-
-        data['newActivities'] = AIService.detectNewActivities(data, activities);
-
-        // We skip AIPlanReviewDialog!
-        // We now returning the proposal map directly to TimelineScreen.
-        // BUT we still need to process new activities creation?
-        // Actually, creating new activities (custom tags) should happen upon confirmation.
-        // However, if we just return the map, the UI will try to render "Unknown Tag"?
-        // TimelineHourTile can render any string. 
-        // We should return the map.
-        // Wait, the schedule map from AI is standard keys?
-        // Let's parse it here.
-        
-        // Parse schedule
-        final Map<String, dynamic> rawSchedule = data['schedule'] ?? {};
-        final Map<String, AIProposal> finalSchedule = {};
-        
-        rawSchedule.forEach((key, val) {
-            if (val is String) {
-               // Backward compat or simple structure
-               finalSchedule[key] = AIProposal(activity: val, reason: '');
-            } else if (val is Map) {
-               final act = val['activity']?.toString() ?? '';
-               final reason = val['reason']?.toString() ?? '';
-               if (act.isNotEmpty) {
-                  finalSchedule[key] = AIProposal(activity: act, reason: reason);
-               }
-            }
-        });
-        
-        // INTERPOLATION LOGIC:
-        // Ensure that if we have a gap between two suggestions that is <= 60 mins, we fill it.
-        // Actually simpler: iterate hours from Wake to Sleep.
-        // If finalSchedule has HH:00 but NOT HH:30, and HH:00's reason implies it's long?
-        // Or just rely on the user instructions?
-        // User said: "if needed for more than 1 hour, repeat it again".
-        // But the AI might still return gaps.
-        // Let's implement a specific check:
-        // If HH:00 is set, and HH:30 is missing, check if (HH+1):00 is set.
-        // If HH:00 is set to X, we can potentially infer HH:30 is X?
-        // Risky if it's meant to be free time.
-        // But wait, the PROMPT says "Fill ALL gaps".
-        // If AI returns 18:00 Dance and 19:30 Meal.
-        // 18:30 and 19:00 are missing.
-        // It's safer to fill them with "Dance" (previous activity) than leave them empty.
-        
-        final List<String> sortedKeys = finalSchedule.keys.toList()..sort();
-        if (sortedKeys.isNotEmpty) {
-           // We need to know the full range.
-           // Let's assume the keys provided cover the range partly.
-           for (int i = 0; i < sortedKeys.length - 1; i++) {
-              final currTime = sortedKeys[i];
-              final nextTime = sortedKeys[i+1];
-              
-              final h1 = int.parse(currTime.split(':')[0]);
-              final m1 = int.parse(currTime.split(':')[1]);
-              final t1 = h1 * 60 + m1;
-              
-              final h2 = int.parse(nextTime.split(':')[0]);
-              final m2 = int.parse(nextTime.split(':')[1]);
-              final t2 = h2 * 60 + m2;
-              
-              // Fill ALL 30-minute slots between t1 and t2 with the activity from t1
-              int cursor = t1 + 30; 
-              while (cursor < t2) {
-                 final cH = cursor ~/ 60;
-                 final cM = cursor % 60;
-                 final cKey = '${cH.toString().padLeft(2,'0')}:${cM.toString().padLeft(2,'0')}';
-                 
-                 final prevProp = finalSchedule[currTime]!;
-                 // If not already filled (shouldn't be, as keys are sorted and sparse), fill it
-                 if (!finalSchedule.containsKey(cKey)) {
-                    finalSchedule[cKey] = AIProposal(
-                      activity: prevProp.activity,
-                      reason: prevProp.reason // Or "Continued"
-                    );
-                 }
-                 cursor += 30;
-              }
-           }
-        }
-        
-        final List<String> newActs = List<String>.from(data['newActivities'] ?? []);
-        if (newActs.isNotEmpty) {
-            await _createNewActivities(context, newActs);
-        }
-
-        return finalSchedule;
-
-      } catch (e) {
-
-        _showError(context, 'Failed to parse AI response: $e');
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (data.containsKey('error')) {
+        _showError(context, 'AI Error: ${data['error']}');
         return null;
       }
+
+      data['newActivities'] = AIService.detectNewActivities(data, activities);
+
+      // Parse schedule
+      final Map<String, dynamic> rawSchedule = data['schedule'] ?? {};
+      final Map<String, AIProposal> finalSchedule = {};
+      
+      rawSchedule.forEach((key, val) {
+          if (val is String) {
+             // Backward compat or simple structure
+             finalSchedule[key] = AIProposal(activity: val, reason: '', isTask: false);
+          } else if (val is Map) {
+             final act = val['activity']?.toString() ?? '';
+             final reason = val['reason']?.toString() ?? '';
+             final tTitle = val['taskTitle']?.toString();
+             
+             if (act.isNotEmpty) {
+                // Check if this corresponds to a task
+                // 1. Explicit taskTitle returned by AI
+                // 2. Or fallback: 'reason' might be the task title (legacy)
+                
+                String? finalTaskTitle = tTitle;
+                bool isTask = false;
+                
+                if (finalTaskTitle != null && knownTaskTitles.contains(finalTaskTitle)) {
+                   isTask = true;
+                } else if (knownTaskTitles.contains(reason)) {
+                   isTask = true;
+                   finalTaskTitle = reason; // Legacy fallback
+                }
+
+                finalSchedule[key] = AIProposal(
+                   activity: act, 
+                   reason: reason, 
+                   isTask: isTask,
+                   taskTitle: finalTaskTitle
+                );
+             }
+          }
+      });
+      
+      // INTERPOLATION LOGIC
+      final List<String> sortedKeys = finalSchedule.keys.toList()..sort();
+      if (sortedKeys.isNotEmpty) {
+         for (int i = 0; i < sortedKeys.length - 1; i++) {
+            final currTime = sortedKeys[i];
+            final nextTime = sortedKeys[i+1];
+            
+            final h1 = int.parse(currTime.split(':')[0]);
+            final m1 = int.parse(currTime.split(':')[1]);
+            final t1 = h1 * 60 + m1;
+            
+            final h2 = int.parse(nextTime.split(':')[0]);
+            final m2 = int.parse(nextTime.split(':')[1]);
+            final t2 = h2 * 60 + m2;
+            
+            // Fill ALL 30-minute slots between t1 and t2 with the activity from t1
+            int cursor = t1 + 30; 
+            while (cursor < t2) {
+               final cH = cursor ~/ 60;
+               final cM = cursor % 60;
+               final cKey = '${cH.toString().padLeft(2,'0')}:${cM.toString().padLeft(2,'0')}';
+               
+               if (!finalSchedule.containsKey(cKey)) {
+                  final prevProp = finalSchedule[currTime]!;
+                  finalSchedule[cKey] = AIProposal(
+                    activity: prevProp.activity,
+                    reason: prevProp.reason,
+                    isTask: prevProp.isTask,
+                    taskTitle: prevProp.taskTitle,
+                  );
+               }
+               cursor += 30;
+            }
+         }
+      }
+      
+      final List<String> newActs = List<String>.from(data['newActivities'] ?? []);
+      if (newActs.isNotEmpty) {
+          await _createNewActivities(context, newActs);
+      }
+
+      return finalSchedule;
+
     } catch (e) {
       if (context.mounted) {
         onLoading?.call(false);

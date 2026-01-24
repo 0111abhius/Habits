@@ -1273,11 +1273,28 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                 proposedActivity30: _aiProposals[_noteKey(hour, 30)]?.activity,
                 proposedReason00: _aiProposals[_noteKey(hour, 0)]?.reason,
                 proposedReason30: _aiProposals[_noteKey(hour, 30)]?.reason,
-                onAcceptProposal: (entry, activity) {
+                proposedIsTask00: _aiProposals[_noteKey(hour, 0)]?.isTask ?? false,
+                proposedIsTask30: _aiProposals[_noteKey(hour, 30)]?.isTask ?? false,
+                proposedTaskTitle00: _aiProposals[_noteKey(hour, 0)]?.taskTitle,
+                proposedTaskTitle30: _aiProposals[_noteKey(hour, 30)]?.taskTitle,
+                onAcceptProposal: (entry, activity, reason, taskTitle) {
                    setState(() {
                      _aiProposals.remove(_noteKey(entry.startTime.hour, entry.startTime.minute));
                    });
-                   _updateEntry(entry, activity, entry.planNotes, isPlan: true);
+                   // If Task, use taskTitle as notes. Else use default logic.
+                   String notesToSave = entry.planNotes;
+                   
+                   // If we have a specific task title from AI, use it.
+                   if (taskTitle != null && taskTitle.isNotEmpty) {
+                      notesToSave = taskTitle;
+                   } else if (reason != null && reason.isNotEmpty && (taskTitle == null)) {
+                      // Fallback: if reason is present but not taskTitle, but maybe it IS the task title (legacy)
+                      // The clean logic: if isTask is true, the upstream logic sets reason to justification and taskTitle to Title.
+                      // Wait, onAcceptProposal args need to match.
+                      notesToSave = reason;
+                   }
+                   
+                   _updateEntry(entry, activity, notesToSave, isPlan: true);
                 },
                 onRejectProposal: (entry) {
                    setState(() {
@@ -1331,11 +1348,21 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                 proposedActivity30: _aiProposals[_noteKey(hour, 30)]?.activity,
                 proposedReason00: _aiProposals[_noteKey(hour, 0)]?.reason,
                 proposedReason30: _aiProposals[_noteKey(hour, 30)]?.reason,
-                onAcceptProposal: (entry, activity) {
+                proposedIsTask00: _aiProposals[_noteKey(hour, 0)]?.isTask ?? false,
+                proposedIsTask30: _aiProposals[_noteKey(hour, 30)]?.isTask ?? false,
+                proposedTaskTitle00: _aiProposals[_noteKey(hour, 0)]?.taskTitle,
+                proposedTaskTitle30: _aiProposals[_noteKey(hour, 30)]?.taskTitle,
+                onAcceptProposal: (entry, activity, reason, taskTitle) {
                    setState(() {
                      _aiProposals.remove(_noteKey(entry.startTime.hour, entry.startTime.minute));
                    });
-                   _updateEntry(entry, activity, entry.planNotes, isPlan: true);
+                   String notesToSave = entry.planNotes;
+                   if (taskTitle != null && taskTitle.isNotEmpty) {
+                      notesToSave = taskTitle;
+                   } else if (reason != null && reason.isNotEmpty) {
+                      notesToSave = reason;
+                   }
+                   _updateEntry(entry, activity, notesToSave, isPlan: true);
                 },
                 onRejectProposal: (entry) {
                    setState(() {

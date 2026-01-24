@@ -49,13 +49,21 @@ class TimelineHourTile extends StatefulWidget {
     this.proposedReason30,
     this.onAcceptProposal,
     this.onRejectProposal,
+    this.proposedIsTask00 = false,
+    this.proposedIsTask30 = false,
+    this.proposedTaskTitle00,
+    this.proposedTaskTitle30,
   });
 
   final String? proposedActivity00;
   final String? proposedActivity30;
   final String? proposedReason00;
   final String? proposedReason30;
-  final Function(TimelineEntry, String)? onAcceptProposal;
+  final bool proposedIsTask00;
+  final bool proposedIsTask30;
+  final String? proposedTaskTitle00;
+  final String? proposedTaskTitle30;
+  final Function(TimelineEntry, String, String?, String?)? onAcceptProposal;
   final Function(TimelineEntry)? onRejectProposal;
 
   @override
@@ -245,6 +253,8 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     // Check for proposal
     final String? proposal = minute == 0 ? widget.proposedActivity00 : widget.proposedActivity30;
     final String? reason = minute == 0 ? widget.proposedReason00 : widget.proposedReason30;
+    final bool isTask = minute == 0 ? widget.proposedIsTask00 : widget.proposedIsTask30;
+    final String? taskTitle = minute == 0 ? widget.proposedTaskTitle00 : widget.proposedTaskTitle30;
 
     // Show proposal if exists.
     // Case 1: Slot is empty -> Show "Ghost Tile"
@@ -255,14 +265,14 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
        // Check if current is filled
        final currentAct = entry.planactivity;
        if (currentAct.isEmpty) {
-          return _buildGhostTile(proposal, reason, entry, isOverlay: false);
+          return _buildGhostTile(proposal, reason, entry, isOverlay: false, isTask: isTask, taskTitle: taskTitle);
        } else if (currentAct != proposal) {
           // Overwrite suggestion
           // We render the ghost tile ON TOP of the filled slot? Or replace it?
           // User asked for: "Show both filled value and AI suggestion value with reason"
           // Let's use a Stack or Column to show both?
           // Or a specialized GhostTile that shows "Current: X -> Proposed: Y"
-          return _buildGhostTile(proposal, reason, entry, isOverlay: true);
+          return _buildGhostTile(proposal, reason, entry, isOverlay: true, isTask: isTask, taskTitle: taskTitle);
        }
     }
 
@@ -498,9 +508,13 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
     }
   }
 
-  Widget _buildGhostTile(String activity, String? reason, TimelineEntry entry, {required bool isOverlay}) {
+  Widget _buildGhostTile(String activity, String? reason, TimelineEntry entry, {required bool isOverlay, required bool isTask, String? taskTitle}) {
      final currentAct = entry.planactivity;
+     final displayActivity = _displayLabel(activity);
      
+     // Deduplicate reason if it matches taskTitle
+     final showReason = reason != null && reason.isNotEmpty && reason != taskTitle;
+
      return Container(
         decoration: BoxDecoration(
           color: isOverlay ? Colors.orange.withValues(alpha: 0.1) : Colors.deepPurple.withValues(alpha: 0.08),
@@ -511,100 +525,136 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
           borderRadius: BorderRadius.circular(8),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-             Row(
-               children: [
-                 Expanded(
-                   child: Row(
-                     children: [
-                       Icon(Icons.auto_awesome, size: 14, color: isOverlay ? Colors.orange[800] : Colors.deepPurple),
-                       const SizedBox(width: 8),
-                       Expanded(
-                         child: RichText(
+             Expanded(
+               child: Row(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                 children: [
+                   Padding(
+                     padding: const EdgeInsets.only(top: 2),
+                     child: Icon(
+                       isTask ? Icons.task_alt : Icons.auto_awesome, 
+                       size: 18, 
+                       color: isOverlay ? Colors.orange[800] : (isTask ? Colors.blue[800] : Colors.deepPurple)
+                     ),
+                   ),
+                   const SizedBox(width: 8),
+                   Expanded(
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         // Row 1: Activity Name + Task Title
+                         RichText(
                            text: TextSpan(
-                             style: TextStyle(
-                               color: isOverlay ? Colors.orange[900] : Colors.deepPurple,
-                               fontWeight: FontWeight.bold,
-                               fontStyle: FontStyle.italic,
-                               fontSize: 13,
-                             ),
+                             style: DefaultTextStyle.of(context).style,
                              children: [
                                if (isOverlay) ...[
-                                 TextSpan(text: '$currentAct ', style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)),
-                                 const TextSpan(text: '➔ '),
+                                 TextSpan(
+                                   text: '$currentAct ', 
+                                   style: const TextStyle(
+                                     decoration: TextDecoration.lineThrough, 
+                                     color: Colors.grey,
+                                     fontSize: 13,
+                                   )
+                                 ),
+                                 const TextSpan(
+                                    text: '➔ ',
+                                    style: TextStyle(color: Colors.grey, fontSize: 13)
+                                 ),
                                ],
-                               TextSpan(text: _displayLabel(activity)),
+                               
+                               // Activity Name
+                               TextSpan(
+                                 text: displayActivity,
+                                 style: TextStyle(
+                                   color: isOverlay ? Colors.orange[900] : Colors.deepPurple,
+                                   fontWeight: FontWeight.w800, // Extra Bold
+                                   fontSize: 14,
+                                   letterSpacing: 0.5,
+                                 ),
+                               ),
+
+                               // Task Title
+                               if (isTask && taskTitle != null && taskTitle.isNotEmpty)
+                                 TextSpan(
+                                   text: '  $taskTitle',
+                                   style: const TextStyle(
+                                     color: Colors.black87,
+                                     fontWeight: FontWeight.w400, // Normal weight
+                                     fontSize: 14,
+                                     fontFamily: 'Roboto', // Default but explicit for clarity
+                                   ),
+                                 ),
                              ],
                            ),
                            overflow: TextOverflow.ellipsis,
+                           maxLines: 1,
                          ),
-                       ),
-                     ],
-                   ),
-                 ),
-                 
-                 // Actions
-                  // Actions
-                   Row(
-                     mainAxisSize: MainAxisSize.min,
-                     children: [
-                       // Reject Button (Red Outline)
-                       Material(
-                         color: Colors.transparent,
-                         child: InkWell(
-                           borderRadius: BorderRadius.circular(20),
-                           onTap: () => widget.onRejectProposal?.call(entry),
-                           child: Container(
-                             padding: const EdgeInsets.all(8),
-                             decoration: BoxDecoration(
-                               shape: BoxShape.circle,
-                               border: Border.all(color: Colors.red.withOpacity(0.5)),
-                               color: Colors.red.withOpacity(0.05),
+                         
+                         // Row 2: AI Reason
+                         if (showReason)
+                           Padding(
+                             padding: const EdgeInsets.only(top: 2),
+                             child: Text(
+                               reason!,
+                               style: TextStyle(
+                                 fontSize: 12,
+                                 fontStyle: FontStyle.italic,
+                                 color: Colors.grey[700],
+                                 height: 1.2,
+                               ),
+                               maxLines: 2,
+                               overflow: TextOverflow.ellipsis,
                              ),
-                             child: Icon(Icons.close, size: 20, color: Colors.red[800]),
                            ),
-                         ),
-                       ),
-                       
-                       const SizedBox(width: 24), // Wide spacing
-                       
-                       // Accept Button (Green Fill)
-                       Material(
-                         color: Colors.green.withOpacity(0.15),
-                         borderRadius: BorderRadius.circular(20),
-                         child: InkWell(
-                           borderRadius: BorderRadius.circular(20),
-                           onTap: () => widget.onAcceptProposal?.call(entry, activity),
-                           child: Container(
-                             padding: const EdgeInsets.all(8),
-                             decoration: BoxDecoration(
-                               shape: BoxShape.circle,
-                               border: Border.all(color: Colors.green.withOpacity(0.5)),
-                             ),
-                             child: Icon(Icons.check, size: 20, color: Colors.green[900]),
-                           ),
-                         ),
-                       ),
-                       const SizedBox(width: 4),
-                     ],
+                       ],
+                     ),
                    ),
-                ],
-              ),
-             if (reason != null && reason.isNotEmpty)
-               Padding(
-                 padding: const EdgeInsets.only(left: 22, right: 8, bottom: 4), // align with text
-                 child: Text(
-                   reason,
-                   style: TextStyle(
-                     fontSize: 10, 
-                     color: isOverlay ? Colors.orange[800] : Colors.deepPurple.withValues(alpha: 0.8),
-                   ),
-                   maxLines: 2,
-                   overflow: TextOverflow.ellipsis,
-                 ),
+                 ],
                ),
+             ),
+             
+             // Actions
+             Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Reject Button
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => widget.onRejectProposal?.call(entry),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(Icons.close, size: 20, color: Colors.red[300]),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 8), 
+                  
+                  // Accept Button
+                  Material(
+                    color: Colors.green.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => widget.onAcceptProposal?.call(entry, activity, reason, taskTitle),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                        ),
+                        child: Icon(Icons.check, size: 20, color: Colors.green[900]),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+             ),
           ],
         ),
      );
