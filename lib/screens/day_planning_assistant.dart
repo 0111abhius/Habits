@@ -286,8 +286,7 @@ class DayPlanningAssistant {
         sleepTime: sleepTime,
       );
 
-
-      if (!context.mounted) return null;
+      print("DEBUG: AI Raw Response: $jsonStr");      if (!context.mounted) return null;
       // No loading dialog to pop
       
       onLoading?.call(false); 
@@ -327,6 +326,58 @@ class DayPlanningAssistant {
                }
             }
         });
+        
+        // INTERPOLATION LOGIC:
+        // Ensure that if we have a gap between two suggestions that is <= 60 mins, we fill it.
+        // Actually simpler: iterate hours from Wake to Sleep.
+        // If finalSchedule has HH:00 but NOT HH:30, and HH:00's reason implies it's long?
+        // Or just rely on the user instructions?
+        // User said: "if needed for more than 1 hour, repeat it again".
+        // But the AI might still return gaps.
+        // Let's implement a specific check:
+        // If HH:00 is set, and HH:30 is missing, check if (HH+1):00 is set.
+        // If HH:00 is set to X, we can potentially infer HH:30 is X?
+        // Risky if it's meant to be free time.
+        // But wait, the PROMPT says "Fill ALL gaps".
+        // If AI returns 18:00 Dance and 19:30 Meal.
+        // 18:30 and 19:00 are missing.
+        // It's safer to fill them with "Dance" (previous activity) than leave them empty.
+        
+        final List<String> sortedKeys = finalSchedule.keys.toList()..sort();
+        if (sortedKeys.isNotEmpty) {
+           // We need to know the full range.
+           // Let's assume the keys provided cover the range partly.
+           for (int i = 0; i < sortedKeys.length - 1; i++) {
+              final currTime = sortedKeys[i];
+              final nextTime = sortedKeys[i+1];
+              
+              final h1 = int.parse(currTime.split(':')[0]);
+              final m1 = int.parse(currTime.split(':')[1]);
+              final t1 = h1 * 60 + m1;
+              
+              final h2 = int.parse(nextTime.split(':')[0]);
+              final m2 = int.parse(nextTime.split(':')[1]);
+              final t2 = h2 * 60 + m2;
+              
+              // Fill ALL 30-minute slots between t1 and t2 with the activity from t1
+              int cursor = t1 + 30; 
+              while (cursor < t2) {
+                 final cH = cursor ~/ 60;
+                 final cM = cursor % 60;
+                 final cKey = '${cH.toString().padLeft(2,'0')}:${cM.toString().padLeft(2,'0')}';
+                 
+                 final prevProp = finalSchedule[currTime]!;
+                 // If not already filled (shouldn't be, as keys are sorted and sparse), fill it
+                 if (!finalSchedule.containsKey(cKey)) {
+                    finalSchedule[cKey] = AIProposal(
+                      activity: prevProp.activity,
+                      reason: prevProp.reason // Or "Continued"
+                    );
+                 }
+                 cursor += 30;
+              }
+           }
+        }
         
         final List<String> newActs = List<String>.from(data['newActivities'] ?? []);
         if (newActs.isNotEmpty) {

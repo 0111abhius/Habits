@@ -14,7 +14,7 @@ class AIService {
 
   final GenerativeModel _model;
 
-  AIService() : _model = GenerativeModel(model: 'gemini-3-flash', apiKey: _apiKey);
+  AIService() : _model = GenerativeModel(model: 'gemini-2.5-flash-lite', apiKey: _apiKey);
 
   Future<String> getInsights({required String logs, required String goal}) async {
     final prompt = '''
@@ -139,7 +139,8 @@ INSTRUCTIONS:
 1. Fill ALL gaps between $wakeTime and $sleepTime. Do not leave unidentified empty blocks.
 2. If a time block should be free, label it explicitly (e.g. "Free Time", "Break", "Relax").
 3. Optimize the schedule to achieve the goal.
-4. Return strict JSON.
+4. IMPORTANT: All start times MUST be at :00 or :30 minutes. Do NOT suggest times like 08:15 or 08:45. Minimum block size is 30 minutes.
+5. Return strict JSON.
 
 IMPORTANT: You must return the response in strict JSON format.
 The JSON must have this structure:
@@ -158,6 +159,8 @@ Each value in "schedule" MUST be an object with "activity" and "reason".
 "reasoning" should be a concise summary of the plan.
 Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
 ''';
+    
+    print("DEBUG: AI REQUEST PROMPT:\n$prompt");
 
     try {
       final content = [Content.text(prompt)];

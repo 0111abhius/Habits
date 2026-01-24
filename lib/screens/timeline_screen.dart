@@ -1216,11 +1216,18 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
               ? _blockKeys.putIfAbsent(_noteKey(hour, 30), () => GlobalKey())
               : null;
 
-          final tile = ValueListenableBuilder<TimelineViewMode>(
+          return ValueListenableBuilder<TimelineViewMode>(
             valueListenable: _viewModeNotifier,
             builder: (context, viewMode, _) {
-            if (key30 == null) {
-              return TimelineHourTile(
+            final bool hasProposal30 = _aiProposals.containsKey(_noteKey(hour, 30));
+            final bool isSplit = _splitHours.contains(hour) || hasProposal30;
+            
+            Widget tileContent;
+
+
+
+            if (!isSplit) {
+              tileContent = TimelineHourTile(
                 key: ValueKey(hour),
                 hour: hour,
                 entry00: entry00,
@@ -1276,7 +1283,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
             } else {
               // This is a tricky one. The previous replace might have context issues.
               // I will use a larger block or simply match the existing call.
-              return TimelineHourTile(
+              tileContent = TimelineHourTile(
                 key: ValueKey(hour),
                 hour: hour,
                 entry00: entry00,
@@ -1327,19 +1334,18 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                 },
               );
             }
-            }
-          );
 
-          if (sectionTitle != null) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (sectionHeader != null) sectionHeader,
-                tile,
-              ],
-            );
-          }
-          return tile;
+            if (sectionTitle != null) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (sectionHeader != null) sectionHeader,
+                  tileContent,
+                ],
+              );
+            }
+            return tileContent;
+          });
         }),
       ),
     );
@@ -1535,15 +1541,29 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     } else {
       // SPLIT -> add 30-minute entry AND shrink 00-entry to 30 mins
       
-      // 1. Create 30-min entry
+      // 1. Fetch 00 entry to potentially copy data
+      final idx00 = _cachedEntries.indexWhere((e) => e.id == fullDocId);
+      String existingActivity = '';
+      String existingPlanActivity = '';
+      String existingPlanNotes = '';
+      
+      if (idx00 != -1) {
+          existingActivity = _cachedEntries[idx00].activity;
+          existingPlanActivity = _cachedEntries[idx00].planactivity;
+          existingPlanNotes = _cachedEntries[idx00].planNotes;
+      }
+      
+      // 2. Create 30-min entry (Auto-fill with existing values)
       final newEntry = TimelineEntry(
         id: halfDocId,
         userId: userId,
         date: selectedDate,
         startTime: halfStart,
         endTime: halfStart.add(const Duration(minutes: 30)),
-        activity: '',
+        activity: existingActivity, // Auto-fill actual
         notes: '',
+        planactivity: existingPlanActivity, // Auto-fill plan
+        planNotes: existingPlanNotes,
       );
       batch.set(entriesColl.doc(halfDocId), newEntry.toMap());
 
