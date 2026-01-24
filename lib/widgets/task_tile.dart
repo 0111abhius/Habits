@@ -140,13 +140,7 @@ class TaskTile extends StatelessWidget {
                               icon: Icons.access_time_filled, 
                               color: theme.colorScheme.secondary,
                             ),
-                          if (task.activity != null && task.activity!.isNotEmpty)
-                            _buildChip(
-                              context, 
-                              label: task.activity!, 
-                              icon: Icons.local_activity, 
-                              color: Colors.blueAccent,
-                            ),
+
                            if (task.scheduledDate != null)
                              _buildChip(
                                context, 

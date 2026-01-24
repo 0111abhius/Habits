@@ -209,11 +209,11 @@ class _TasksScreenState extends State<TasksScreen> {
       }
   }
 
-  Future<void> _setFolderActivity(String folderName) async {
+  Future<void> _setFolderActivity(String folderName, {String? explicitActivity}) async {
       final currentActivity = _folderActivities[folderName] ?? '';
       
-      // Use the reusable activity picker
-      final picked = await showActivityPicker(
+      // Use explicit if provided, else use the reusable activity picker
+      final picked = explicitActivity ?? await showActivityPicker(
           context: context,
           allActivities: _allActivities,
           recent: _recentActivities,
@@ -331,14 +331,8 @@ class _TasksScreenState extends State<TasksScreen> {
       final titleController = TextEditingController(text: taskToEdit?.title ?? '');
       int estimatedMinutes = taskToEdit?.estimatedMinutes ?? 30;
       bool isToday = taskToEdit?.isToday ?? _isToday;
-      String? selectedFolder = taskToEdit?.folder ?? _selectedFolder; // Default to current view's folder if any
-      
-      // Initialize activity: use existing if editing/set, otherwise check folder default
-      String? selectedActivity = taskToEdit?.activity;
-      final initialFolderKey = selectedFolder ?? _defaultFolderName;
-      if (selectedActivity == null && _folderActivities.containsKey(initialFolderKey)) {
-          selectedActivity = _folderActivities[initialFolderKey];
-      }
+      // Determine initial folder
+      String? selectedFolder = taskToEdit?.folder ?? _selectedFolder; 
 
       DateTime? scheduledDate = taskToEdit?.scheduledDate;
 
@@ -348,6 +342,10 @@ class _TasksScreenState extends State<TasksScreen> {
           shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
           builder: (ctx) => StatefulBuilder(
               builder: (context, setSheetState) {
+                  // Derive activity strictly from folder
+                  final currentFolderKey = selectedFolder ?? _defaultFolderName;
+                  final String? derivedActivity = _folderActivities[currentFolderKey];
+
                   return Padding(
                       padding: EdgeInsets.only(
                           bottom: MediaQuery.of(context).viewInsets.bottom + 20, 
@@ -408,12 +406,6 @@ class _TasksScreenState extends State<TasksScreen> {
                                                       final newFolder = chosen == '__INBOX__' ? null : chosen;
                                                       setSheetState(() {
                                                           selectedFolder = newFolder;
-                                                          // Auto-fill activity if folder has default
-                                                          // User requested: "whenever i change the folder, it automatically should populate the default activity of that folder if exist"
-                                                          final folderKey = newFolder ?? _defaultFolderName;
-                                                          if (_folderActivities.containsKey(folderKey)) {
-                                                              selectedActivity = _folderActivities[folderKey];
-                                                          }
                                                       });
                                                   }
                                               },
@@ -447,7 +439,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                               labelStyle: TextStyle(color: isToday ? Colors.orange[800] : null),
                                           ),
                                           const SizedBox(width: 8),
-
+ 
                                           // Date Picker
                                           InputChip(
                                               avatar: Icon(Icons.calendar_today, size: 16, color: scheduledDate != null ? Colors.blue : null),
@@ -463,9 +455,6 @@ class _TasksScreenState extends State<TasksScreen> {
                                                   if (picked != null) {
                                                       setSheetState(() {
                                                           scheduledDate = picked;
-                                                          // If picked is today, set isToday? 
-                                                          // Or keep them separate? Logic in Task model implies they are separate flags but usually related.
-                                                          // For now, let separate.
                                                       });
                                                   }
                                               },
@@ -476,50 +465,8 @@ class _TasksScreenState extends State<TasksScreen> {
                               ),
                               const SizedBox(height: 16),
                               Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
-                                      TextButton.icon(
-                                          icon: Icon(Icons.local_activity, color: selectedActivity != null ? Colors.blue : Colors.grey),
-                                          label: Text(selectedActivity ?? 'Add Activity'),
-                                          onPressed: () async {
-                                              final picked = await showActivityPicker(
-                                                  context: context,
-                                                  allActivities: _allActivities,
-                                                  recent: _recentActivities,
-                                              );
-                                              if (picked != null) {
-                                                  String finalAct = picked;
-                                                  if (picked == '__custom') {
-                                                      // ... reuse custom logic ...
-                                                       final custom = await showDialog<String>(
-                                                          context: context,
-                                                          builder: (ctx) {
-                                                              final c = TextEditingController();
-                                                              return AlertDialog(
-                                                                  title: const Text('Custom Activity'),
-                                                                  content: TextField(
-                                                                      controller: c, 
-                                                                      autofocus: true, 
-                                                                      textCapitalization: TextCapitalization.sentences,
-                                                                      decoration: const InputDecoration(hintText: 'Activity Name'),
-                                                                  ),
-                                                                  actions: [
-                                                                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                                                                      TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Save')),
-                                                                  ],
-                                                              );
-                                                          }
-                                                       );
-                                                       if (custom == null || custom.isEmpty) return;
-                                                       finalAct = custom;
-                                                       // We don't save to global recent list here immediately, handled when task is saved if desired, 
-                                                       // or we can invoke the saving logic we have in main screen. 
-                                                       // For simplicity in this localized logic, let's just use it.
-                                                  }
-                                                  setSheetState(() => selectedActivity = finalAct);
-                                              }
-                                          },
-                                      ),
                                       ElevatedButton(
                                           onPressed: () {
                                               final text = titleController.text.trim();
@@ -528,14 +475,14 @@ class _TasksScreenState extends State<TasksScreen> {
                                               Navigator.pop(ctx);
                                               
                                               if (isEditing) {
-                                                  _updateTaskFull(taskToEdit!, text, estimatedMinutes, isToday, selectedFolder, selectedActivity, scheduledDate);
+                                                  _updateTaskFull(taskToEdit!, text, estimatedMinutes, isToday, selectedFolder, derivedActivity, scheduledDate);
                                               } else {
                                                   _addTask(
                                                       title: text, 
                                                       estimatedMinutes: estimatedMinutes, 
                                                       isToday: isToday, 
                                                       folder: selectedFolder == '__INBOX__' ? null : selectedFolder, // Handle inbox
-                                                      activity: selectedActivity,
+                                                      activity: derivedActivity,
                                                       scheduledDate: scheduledDate,
                                                   );
                                               }
@@ -678,27 +625,60 @@ class _TasksScreenState extends State<TasksScreen> {
                               ),
                               actions: [
                                   TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                                  TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Create')),
+                                  TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Next')),
                               ],
                           )
                       );
+                      
                       if (name != null && name.isNotEmpty) {
-                          await _createFolder(name);
-                          if (mounted) {
-                              // Ask for default activity?
-                              final wantActivity = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                      title: const Text('Set Default Activity?'),
-                                      content: Text('Would you like to set a default activity for "$name"?'),
-                                      actions: [
-                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
-                                          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Yes')),
-                                      ],
-                                  )
-                              );
-                              if (wantActivity == true && mounted) {
-                                  await _setFolderActivity(name);
+                          // Require Activity Selection
+                          if (!mounted) return;
+                          final pickedActivity = await showActivityPicker(
+                              context: context,
+                              allActivities: _allActivities,
+                              recent: _recentActivities,
+                          );
+
+                          if (pickedActivity != null) {
+                              String finalActivity = pickedActivity;
+                              if (pickedActivity == '__custom') {
+                                   if (!mounted) return;
+                                   final custom = await showDialog<String>(
+                                      context: context,
+                                      builder: (ctx) {
+                                          final c = TextEditingController();
+                                          return AlertDialog(
+                                              title: const Text('Custom Activity'),
+                                              content: TextField(
+                                                  controller: c, 
+                                                  autofocus: true, 
+                                                  textCapitalization: TextCapitalization.sentences,
+                                                  decoration: const InputDecoration(hintText: 'Activity Name'),
+                                              ),
+                                              actions: [
+                                                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                                                  TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Save')),
+                                              ],
+                                          );
+                                      }
+                                   );
+                                   if (custom == null || custom.isEmpty) return;
+                                   finalActivity = custom;
+                                   // Save custom activity logic handled in _addTask or global update, 
+                                   // but here we just need the string for the folder map.
+                                   // We should probably add it to customActivities immediately to be safe.
+                                   final uid = FirebaseAuth.instance.currentUser?.uid;
+                                   if (uid != null) {
+                                       getFirestore().collection('user_settings').doc(uid).update({
+                                           'customActivities': FieldValue.arrayUnion([custom])
+                                       });
+                                   }
+                              }
+
+                              await _createFolder(name);
+                              if (mounted) {
+                                  // Set the activity for the folder
+                                  await _setFolderActivity(name, explicitActivity: finalActivity);
                               }
                           }
                       }
@@ -870,15 +850,32 @@ class _TasksScreenState extends State<TasksScreen> {
                   setState(() => _selectedFolder = null);
               }
           },
-          title: RichText(
-            text: TextSpan(
-              style: Theme.of(context).textTheme.titleMedium,
-              children: [
-                TextSpan(text: folderName + countStr, style: const TextStyle(fontWeight: FontWeight.bold)),
-                if (activityStr.isNotEmpty)
-                  TextSpan(text: activityStr, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.normal)),
-              ]
-            )
+          title: Row(
+            children: [
+               Text(folderName + countStr, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+               if (activity != null && activity.isNotEmpty) ...[
+                 const SizedBox(width: 8),
+                 Container(
+                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                   decoration: BoxDecoration(
+                     color: Colors.blueAccent.withOpacity(0.1),
+                     borderRadius: BorderRadius.circular(4),
+                     border: Border.all(color: Colors.blueAccent.withOpacity(0.2)),
+                   ),
+                   child: Row(
+                     mainAxisSize: MainAxisSize.min,
+                     children: [
+                       const Icon(Icons.local_activity, size: 10, color: Colors.blueAccent),
+                       const SizedBox(width: 4),
+                       Text(
+                         displayActivity(activity), 
+                         style: const TextStyle(fontSize: 10, color: Colors.blueAccent, fontWeight: FontWeight.bold)
+                       ),
+                     ],
+                   ),
+                 ),
+               ]
+            ],
           ),
           leading: Icon(isInbox ? Icons.inbox : Icons.folder_outlined, color: isInbox ? Colors.blue : Colors.grey[700]),
           trailing: PopupMenuButton<String>(
