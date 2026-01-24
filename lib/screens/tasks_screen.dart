@@ -332,7 +332,14 @@ class _TasksScreenState extends State<TasksScreen> {
       int estimatedMinutes = taskToEdit?.estimatedMinutes ?? 30;
       bool isToday = taskToEdit?.isToday ?? _isToday;
       String? selectedFolder = taskToEdit?.folder ?? _selectedFolder; // Default to current view's folder if any
+      
+      // Initialize activity: use existing if editing/set, otherwise check folder default
       String? selectedActivity = taskToEdit?.activity;
+      final initialFolderKey = selectedFolder ?? _defaultFolderName;
+      if (selectedActivity == null && _folderActivities.containsKey(initialFolderKey)) {
+          selectedActivity = _folderActivities[initialFolderKey];
+      }
+
       DateTime? scheduledDate = taskToEdit?.scheduledDate;
 
       await showModalBottomSheet(
@@ -401,9 +408,11 @@ class _TasksScreenState extends State<TasksScreen> {
                                                       final newFolder = chosen == '__INBOX__' ? null : chosen;
                                                       setSheetState(() {
                                                           selectedFolder = newFolder;
-                                                          // Auto-fill activity if empty and folder has default
-                                                          if (newFolder != null && _folderActivities.containsKey(newFolder) && selectedActivity == null) {
-                                                              selectedActivity = _folderActivities[newFolder];
+                                                          // Auto-fill activity if folder has default
+                                                          // User requested: "whenever i change the folder, it automatically should populate the default activity of that folder if exist"
+                                                          final folderKey = newFolder ?? _defaultFolderName;
+                                                          if (_folderActivities.containsKey(folderKey)) {
+                                                              selectedActivity = _folderActivities[folderKey];
                                                           }
                                                       });
                                                   }
@@ -482,6 +491,30 @@ class _TasksScreenState extends State<TasksScreen> {
                                                   String finalAct = picked;
                                                   if (picked == '__custom') {
                                                       // ... reuse custom logic ...
+                                                       final custom = await showDialog<String>(
+                                                          context: context,
+                                                          builder: (ctx) {
+                                                              final c = TextEditingController();
+                                                              return AlertDialog(
+                                                                  title: const Text('Custom Activity'),
+                                                                  content: TextField(
+                                                                      controller: c, 
+                                                                      autofocus: true, 
+                                                                      textCapitalization: TextCapitalization.sentences,
+                                                                      decoration: const InputDecoration(hintText: 'Activity Name'),
+                                                                  ),
+                                                                  actions: [
+                                                                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                                                                      TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Save')),
+                                                                  ],
+                                                              );
+                                                          }
+                                                       );
+                                                       if (custom == null || custom.isEmpty) return;
+                                                       finalAct = custom;
+                                                       // We don't save to global recent list here immediately, handled when task is saved if desired, 
+                                                       // or we can invoke the saving logic we have in main screen. 
+                                                       // For simplicity in this localized logic, let's just use it.
                                                   }
                                                   setSheetState(() => selectedActivity = finalAct);
                                               }
