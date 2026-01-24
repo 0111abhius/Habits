@@ -457,9 +457,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
   }
 
   Future<void> _showAIAssistDialog() async {
-    final goal = await AIGoalDialog.show(context, title: 'AI Template Coach');
-    if (goal != null) {
-      _generateTemplateInsights(goal);
+    final result = await AIGoalDialog.show(context, title: 'AI Template Coach');
+    if (result != null) {
+      _generateTemplateInsights(result.goal);
     }
   }
 

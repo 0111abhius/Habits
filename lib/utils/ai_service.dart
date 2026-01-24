@@ -140,7 +140,10 @@ INSTRUCTIONS:
 2. If a time block should be free, label it explicitly (e.g. "Free Time", "Break", "Relax").
 3. Optimize the schedule to achieve the goal.
 4. IMPORTANT: All start times MUST be at :00 or :30 minutes. Do NOT suggest times like 08:15 or 08:45. Minimum block size is 30 minutes.
-5. If a task from the list has "[Activity: Name]" appended (e.g. "Finish Report [Activity: Work]"):
+5. PRIORITY: Before suggesting a generic activity (e.g. "Social", "Study", "Work"), CHECK the "OTHER AVAILABLE TASKS" list. 
+   - If a task fits the generic activity (e.g. "meet friends" is a "Social" activity), YOU MUST USE THAT TASK.
+   - Do NOT create a new generic "Social" block if "meet friends" is available.
+6. If a task from the list has "[Activity: Name]" appended (e.g. "Finish Report [Activity: Work]"):
    - Set the "activity" field to "Name" (e.g. "Work").
    - Set the "taskTitle" field to "Finish Report".
    - Set the "reason" field to a short justification (e.g. "Overdue" or "High Priority").

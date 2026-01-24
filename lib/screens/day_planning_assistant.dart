@@ -70,25 +70,37 @@ class DayPlanningAssistant {
         return result;
     } else {
         // Standard Path
-        final goal = await AIGoalDialog.show(
+        final result = await AIGoalDialog.show(
           context, 
           title: 'AI Day Planner', 
           promptLabel: 'Planning for ${DateFormat('MMM d').format(date)}.\nWhat is your main goal?',
           initialGoal: defaultGoal,
         );
 
-        if (goal != null) {
+        if (result != null) {
            onLoading?.call(true);
            final wStr = '${wakeTime.hour.toString().padLeft(2,'0')}:${wakeTime.minute.toString().padLeft(2,'0')}';
            final sStr = '${sleepTime.hour.toString().padLeft(2,'0')}:${sleepTime.minute.toString().padLeft(2,'0')}';
-           Map<String, AIProposal>? result;
+           Map<String, AIProposal>? aiRes;
            if (isFull) {
-               result = await _showFeedbackDialog(context, date, currentEntries, availableActivities, goal, isAuto: false, onLoading: onLoading, wakeTime: wStr, sleepTime: sStr);
+               aiRes = await _showFeedbackDialog(context, date, currentEntries, availableActivities, result.goal, isAuto: false, onLoading: onLoading, wakeTime: wStr, sleepTime: sStr);
            } else {
-               result = await _generatePlan(context, date, currentEntries, availableActivities, goal, onLoading: onLoading, wakeTime: wStr, sleepTime: sStr);
+               aiRes = await _generatePlan(
+                 context, 
+                 date, 
+                 currentEntries, 
+                 availableActivities, 
+                 result.goal, 
+                 onLoading: onLoading, 
+                 wakeTime: wStr, 
+                 sleepTime: sStr,
+                 includeOverdue: result.includeOverdue,
+                 includeToday: result.includeToday,
+                 includeUnscheduled: result.includeUnscheduled,
+               );
            }
            onLoading?.call(false);
-           return result;
+           return aiRes;
         }
     }
     return null;
@@ -181,16 +193,28 @@ class DayPlanningAssistant {
          if (proceed == true) {
              onLoading?.call(false); // Stop spinning while user reviews feedback
              
-             final newGoal = await AIGoalDialog.show(
+             final result = await AIGoalDialog.show(
                 context, 
                 title: 'Refine Goal', 
                 promptLabel: 'Edit your goal or context for replanning:',
                 initialGoal: goal,
              );
              
-             if (newGoal != null) {
+             if (result != null) {
                  onLoading?.call(true); // Restart spinning
-                 return await _generatePlan(context, date, entries, activities, newGoal, onLoading: onLoading, wakeTime: wakeTime, sleepTime: sleepTime);
+                 return await _generatePlan(
+                   context, 
+                   date, 
+                   entries, 
+                   activities, 
+                   result.goal, 
+                   onLoading: onLoading, 
+                   wakeTime: wakeTime, 
+                   sleepTime: sleepTime,
+                   includeOverdue: result.includeOverdue,
+                   includeToday: result.includeToday,
+                   includeUnscheduled: result.includeUnscheduled,
+                 );
              }
          }
          return null;
@@ -210,7 +234,7 @@ class DayPlanningAssistant {
       return buffer.toString().isEmpty ? '(No activities planned yet)' : buffer.toString();
   }
 
-  static Future<Map<String, AIProposal>?> _generatePlan(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {Function(bool)? onLoading, required String wakeTime, required String sleepTime}) async {
+  static Future<Map<String, AIProposal>?> _generatePlan(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {Function(bool)? onLoading, required String wakeTime, required String sleepTime, bool includeOverdue = true, bool includeToday = true, bool includeUnscheduled = true}) async {
     print("DEBUG: _generatePlan called");
     final Set<String> knownTaskTitles = {};
     
@@ -248,12 +272,43 @@ class DayPlanningAssistant {
 
         for (final t in allTasks) {
            bool isOverdue = false;
-           bool isToday = t.isToday;
+           // If manually flagged as Today, respect that even if scheduledDate is null
+           bool isToday = t.isToday; 
+           bool isFuture = false;
+           
            if (t.scheduledDate != null) {
-             final d = DateTime(t.scheduledDate!.year, t.scheduledDate!.month, t.scheduledDate!.day);
-             if (d.isBefore(todayStart)) isOverdue = true;
-             if (d == todayStart) isToday = true;
+               final d = DateTime(t.scheduledDate!.year, t.scheduledDate!.month, t.scheduledDate!.day);
+               if (d.isBefore(todayStart)) isOverdue = true;
+               if (d == todayStart) isToday = true;
+               if (d.isAfter(todayStart)) isFuture = true;
            }
+           
+           // If it isToday, it is NOT Unscheduled effectively.
+           bool isUnscheduled = t.scheduledDate == null && !isToday;
+
+
+           // Filter based on flags
+           // Always exclude future tasks
+           if (isFuture) {
+             print("DEBUG: Task '${t.title}' SKIPPED (Future)");
+             continue;
+           }
+
+           if (isOverdue && !includeOverdue) {
+             print("DEBUG: Task '${t.title}' SKIPPED (Overdue excluded)");
+             continue;
+           }
+           if (isToday && !includeToday) {
+             print("DEBUG: Task '${t.title}' SKIPPED (Today excluded)");
+             continue;
+           }
+           if (isUnscheduled && !includeUnscheduled) {
+             print("DEBUG: Task '${t.title}' SKIPPED (Unscheduled excluded)");
+             continue; 
+           }
+           
+           print("DEBUG: Task '${t.title}' KEPT. (Overdue:$isOverdue, Today:$isToday, Unscheduled:$isUnscheduled)");
+
            if (isOverdue || isToday) highPriority.add(t);
            else otherTasks.add(t);
         }

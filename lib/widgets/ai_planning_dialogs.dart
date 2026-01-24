@@ -4,21 +4,34 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import '../utils/ai_service.dart';
 
-class AIGoalDialog extends StatelessWidget {
+class AIGoalResult {
+  final String goal;
+  final bool includeOverdue;
+  final bool includeToday;
+  final bool includeUnscheduled;
+
+  AIGoalResult({
+    required this.goal,
+    required this.includeOverdue,
+    required this.includeToday,
+    required this.includeUnscheduled,
+  });
+}
+
+class AIGoalDialog extends StatefulWidget {
   final String title;
   final String promptLabel;
   final String? initialGoal;
-  final TextEditingController _controller;
 
-  AIGoalDialog({
+  const AIGoalDialog({
     super.key,
     required this.title,
     this.promptLabel = 'What is your main goal?',
     this.initialGoal,
-  }) : _controller = TextEditingController(text: initialGoal);
+  });
 
-  static Future<String?> show(BuildContext context, {required String title, String? promptLabel, String? initialGoal}) {
-    return showDialog<String>(
+  static Future<AIGoalResult?> show(BuildContext context, {required String title, String? promptLabel, String? initialGoal}) {
+    return showDialog<AIGoalResult>(
       context: context,
       builder: (ctx) => AIGoalDialog(
         title: title, 
@@ -29,14 +42,36 @@ class AIGoalDialog extends StatelessWidget {
   }
 
   @override
+  State<AIGoalDialog> createState() => _AIGoalDialogState();
+}
+
+class _AIGoalDialogState extends State<AIGoalDialog> {
+  late TextEditingController _controller;
+  bool _includeOverdue = true;
+  bool _includeToday = true;
+  bool _includeUnscheduled = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialGoal);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(title),
+      title: Text(widget.title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(promptLabel),
+          Text(widget.promptLabel),
           const SizedBox(height: 16),
           TextField(
             controller: _controller,
@@ -47,13 +82,44 @@ class AIGoalDialog extends StatelessWidget {
             maxLines: 2,
             autofocus: true,
           ),
+          const SizedBox(height: 16),
+          const Text('Include Tasks:', style: TextStyle(fontWeight: FontWeight.bold)),
+          CheckboxListTile(
+            title: const Text('Overdue Tasks'),
+            value: _includeOverdue,
+            onChanged: (v) => setState(() => _includeOverdue = v ?? true),
+            dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+          ),
+          CheckboxListTile(
+            title: const Text('Today\'s Tasks'),
+            value: _includeToday,
+            onChanged: (v) => setState(() => _includeToday = v ?? true),
+            dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+             contentPadding: EdgeInsets.zero,
+          ),
+          CheckboxListTile(
+            title: const Text('Unscheduled Tasks'),
+            value: _includeUnscheduled,
+            onChanged: (v) => setState(() => _includeUnscheduled = v ?? true),
+            dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+             contentPadding: EdgeInsets.zero,
+          ),
         ],
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(
           onPressed: () {
-            Navigator.pop(context, _controller.text.trim());
+            Navigator.pop(context, AIGoalResult(
+              goal: _controller.text.trim(),
+              includeOverdue: _includeOverdue,
+              includeToday: _includeToday,
+              includeUnscheduled: _includeUnscheduled,
+            ));
           },
           child: const Text('Get Suggestions'),
         ),
