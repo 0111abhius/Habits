@@ -30,6 +30,49 @@ class DayPlanningAssistant {
       } catch (_) {}
     }
 
+    // NEW LOGIC: If planning for Today, ensure we start from "Now" (rounded up to next 30 min)
+    // to avoid re-planning the past.
+    final now = DateTime.now();
+    final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
+    if (isToday) {
+       final currentMins = now.hour * 60 + now.minute;
+       // Round up to next 30 minute block logic:
+       // If currently 10:05 -> 10:30
+       // If currently 10:35 -> 11:00
+       // If currently 10:00 -> 10:00 (or should it be 10:30? Let's say 10:00 is fine if we are quick, but effectively 10:00 is "now")
+       
+       int nextBlock = (currentMins / 30).ceil() * 30;
+       // If we are essentially "at" the block boundary (within 1 min?), maybe valid. 
+       // But simpler to just use ceil. 
+       // Note: if exactly 10:30, ceil gives 10:30.
+       
+       final wakeMins = wakeTime.hour * 60 + wakeTime.minute;
+       if (nextBlock > wakeMins) {
+          // Check if we passed sleep time?
+          final sleepMins = sleepTime.hour * 60 + sleepTime.minute;
+          // Normal wake < sleep case
+          if (sleepMins > wakeMins && nextBlock >= sleepMins) {
+             // It's effectively end of day.
+             // We can clamp to sleepTime or just let it be. 
+             // If we set wakeTime = sleepTime, activeDuration = 0.
+             wakeTime = sleepTime;
+          } else {
+             // Handle midnight crossing if needed? (sleep < wake)
+             // The app seems to assume Day view 7am - 11pm usually. 
+             // Let's assume standard day for "Today" planning.
+             
+             final h = nextBlock ~/ 60;
+             final m = nextBlock % 60;
+             if (h < 24) {
+               wakeTime = TimeOfDay(hour: h, minute: m);
+             } else {
+                // Technically tomorrow.
+                wakeTime = const TimeOfDay(hour: 23, minute: 59);
+             }
+          }
+       }
+    }
+
     // 1. Calculate Fullness heuristics upfront
     int wakeMin = wakeTime.hour * 60 + wakeTime.minute;
     int sleepMin = sleepTime.hour * 60 + sleepTime.minute;
@@ -237,6 +280,7 @@ class DayPlanningAssistant {
   static Future<Map<String, AIProposal>?> _generatePlan(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {Function(bool)? onLoading, required String wakeTime, required String sleepTime, bool includeOverdue = true, bool includeToday = true, bool includeUnscheduled = true}) async {
     print("DEBUG: _generatePlan called");
     final Set<String> knownTaskTitles = {};
+    final Map<String, String> taskToActivityMap = {}; // Maps Task Title -> Activity Name
     
     try {
       // Serialize current plan
@@ -286,7 +330,6 @@ class DayPlanningAssistant {
            // If it isToday, it is NOT Unscheduled effectively.
            bool isUnscheduled = t.scheduledDate == null && !isToday;
 
-
            // Filter based on flags
            // Always exclude future tasks
            if (isFuture) {
@@ -320,6 +363,9 @@ class DayPlanningAssistant {
               final actInfo = (t.activity != null && t.activity!.isNotEmpty) ? ' [Activity: ${t.activity}]' : '';
               buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)$due$actInfo');
               knownTaskTitles.add(t.title);
+              if (t.activity != null && t.activity!.isNotEmpty) {
+                 taskToActivityMap[t.title] = t.activity!;
+              }
            }
         }
         if (otherTasks.isNotEmpty) {
@@ -328,6 +374,9 @@ class DayPlanningAssistant {
               final actInfo = (t.activity != null && t.activity!.isNotEmpty) ? ' [Activity: ${t.activity}]' : '';
               buffer.writeln('- ${t.title} (${t.estimatedMinutes}m)$actInfo');
               knownTaskTitles.add(t.title);
+              if (t.activity != null && t.activity!.isNotEmpty) {
+                 taskToActivityMap[t.title] = t.activity!;
+              }
            }
         }
       }
@@ -365,7 +414,7 @@ class DayPlanningAssistant {
              // Backward compat or simple structure
              finalSchedule[key] = AIProposal(activity: val, reason: '', isTask: false);
           } else if (val is Map) {
-             final act = val['activity']?.toString() ?? '';
+             var act = val['activity']?.toString() ?? '';
              final reason = val['reason']?.toString() ?? '';
              final tTitle = val['taskTitle']?.toString();
              
@@ -377,11 +426,39 @@ class DayPlanningAssistant {
                 String? finalTaskTitle = tTitle;
                 bool isTask = false;
                 
-                if (finalTaskTitle != null && knownTaskTitles.contains(finalTaskTitle)) {
+                // Correction Logic:
+                // If the 'activity' matches a known Task Title, it means AI put Title in Activity.
+                if (knownTaskTitles.contains(act)) {
+                    isTask = true;
+                    finalTaskTitle = act; // The "Activity" field IS the task title here
+                    // Try to restore the real activity if we have it
+                    if (taskToActivityMap.containsKey(act)) {
+                        act = taskToActivityMap[act]!;
+                    } else {
+                        // Fallback: If we don't have a mapped activity, checks if we can infer or leave it specific?
+                        // If the task title IS the activity (e.g. "Jogging"), it's fine.
+                        // But usually tasks are "Finish Report".
+                        // If we can't find activity, we might default to "Work" or just keep the Title.
+                        // Let's keep the Title if no mapping found, it's safer than guessing.
+                    }
+                } else if (finalTaskTitle != null && knownTaskTitles.contains(finalTaskTitle)) {
                    isTask = true;
+                   // Use map to ensure correct activity if available
+                   if (taskToActivityMap.containsKey(finalTaskTitle)) {
+                      // Only override if the AI suggested something seemingly generic or wrong?
+                      // The prompt instructions say: "Set activity field to 'Name' (e.g. 'Work')"
+                      // If AI followed instructions, 'act' is 'Work'. 
+                      // If we have a stronger binding in our map, we SHOULD prefer the map.
+                      // E.g. Task "Math" [Activity: Study]. AI says Activity: "Study". Map says "Study". Matches.
+                      // AI says Activity: "Work". Map says "Study". We should probably correct it to "Study".
+                      act = taskToActivityMap[finalTaskTitle]!;
+                   }
                 } else if (knownTaskTitles.contains(reason)) {
                    isTask = true;
                    finalTaskTitle = reason; // Legacy fallback
+                   if (taskToActivityMap.containsKey(finalTaskTitle)) {
+                       act = taskToActivityMap[finalTaskTitle]!;
+                   }
                 }
 
                 finalSchedule[key] = AIProposal(

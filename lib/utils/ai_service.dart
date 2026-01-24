@@ -14,7 +14,7 @@ class AIService {
 
   final GenerativeModel _model;
 
-  AIService() : _model = GenerativeModel(model: 'gemini-2.5-flash-lite', apiKey: _apiKey);
+  AIService() : _model = GenerativeModel(model: 'gemini-2.5-flash', apiKey: _apiKey);
 
   Future<String> getInsights({required String logs, required String goal}) async {
     final prompt = '''
@@ -125,7 +125,7 @@ Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
     final prompt = '''
 You are a productivity expert assisting in planning a specific day.
 The user has a specific goal for today and possibly some already planned activities.
-Your task is to create a COMPLETE day plan from Wake Time ($wakeTime) to Sleep Time ($sleepTime).
+Your task is to create a COMPLETE day plan from Start Time ($wakeTime) to Sleep Time ($sleepTime).
 
 GOAL: $goal
 
@@ -143,6 +143,7 @@ INSTRUCTIONS:
 5. PRIORITY: Before suggesting a generic activity (e.g. "Social", "Study", "Work"), CHECK the "OTHER AVAILABLE TASKS" list. 
    - If a task fits the generic activity (e.g. "meet friends" is a "Social" activity), YOU MUST USE THAT TASK.
    - Do NOT create a new generic "Social" block if "meet friends" is available.
+   - CRITICAL: If a task has an associated activity (e.g. "Study Task [Activity: Study]"), you MUST use that exact activity name ("Study") in the "activity" field.
 6. If a task from the list has "[Activity: Name]" appended (e.g. "Finish Report [Activity: Work]"):
    - Set the "activity" field to "Name" (e.g. "Work").
    - Set the "taskTitle" field to "Finish Report".
