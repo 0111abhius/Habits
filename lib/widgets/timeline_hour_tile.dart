@@ -48,6 +48,7 @@ class TimelineHourTile extends StatefulWidget {
     this.proposedReason00,
     this.proposedReason30,
     this.onAcceptProposal,
+    this.onRejectProposal,
   });
 
   final String? proposedActivity00;
@@ -55,6 +56,7 @@ class TimelineHourTile extends StatefulWidget {
   final String? proposedReason00;
   final String? proposedReason30;
   final Function(TimelineEntry, String)? onAcceptProposal;
+  final Function(TimelineEntry)? onRejectProposal;
 
   @override
   State<TimelineHourTile> createState() => _TimelineHourTileState();
@@ -544,14 +546,52 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
                  ),
                  
                  // Actions
-                 IconButton(
-                   icon: Icon(Icons.check, size: 18, color: isOverlay ? Colors.orange[800] : Colors.deepPurple),
-                   tooltip: 'Accept',
-                   visualDensity: VisualDensity.compact,
-                   onPressed: () => widget.onAcceptProposal?.call(entry, activity),
-                 ),
-               ],
-             ),
+                  // Actions
+                   Row(
+                     mainAxisSize: MainAxisSize.min,
+                     children: [
+                       // Reject Button (Red Outline)
+                       Material(
+                         color: Colors.transparent,
+                         child: InkWell(
+                           borderRadius: BorderRadius.circular(20),
+                           onTap: () => widget.onRejectProposal?.call(entry),
+                           child: Container(
+                             padding: const EdgeInsets.all(8),
+                             decoration: BoxDecoration(
+                               shape: BoxShape.circle,
+                               border: Border.all(color: Colors.red.withOpacity(0.5)),
+                               color: Colors.red.withOpacity(0.05),
+                             ),
+                             child: Icon(Icons.close, size: 20, color: Colors.red[800]),
+                           ),
+                         ),
+                       ),
+                       
+                       const SizedBox(width: 24), // Wide spacing
+                       
+                       // Accept Button (Green Fill)
+                       Material(
+                         color: Colors.green.withOpacity(0.15),
+                         borderRadius: BorderRadius.circular(20),
+                         child: InkWell(
+                           borderRadius: BorderRadius.circular(20),
+                           onTap: () => widget.onAcceptProposal?.call(entry, activity),
+                           child: Container(
+                             padding: const EdgeInsets.all(8),
+                             decoration: BoxDecoration(
+                               shape: BoxShape.circle,
+                               border: Border.all(color: Colors.green.withOpacity(0.5)),
+                             ),
+                             child: Icon(Icons.check, size: 20, color: Colors.green[900]),
+                           ),
+                         ),
+                       ),
+                       const SizedBox(width: 4),
+                     ],
+                   ),
+                ],
+              ),
              if (reason != null && reason.isNotEmpty)
                Padding(
                  padding: const EdgeInsets.only(left: 22, right: 8, bottom: 4), // align with text

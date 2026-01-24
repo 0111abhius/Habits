@@ -1279,6 +1279,11 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                    });
                    _updateEntry(entry, activity, entry.planNotes, isPlan: true);
                 },
+                onRejectProposal: (entry) {
+                   setState(() {
+                     _aiProposals.remove(_noteKey(entry.startTime.hour, entry.startTime.minute));
+                   });
+                },
               );
             } else {
               // This is a tricky one. The previous replace might have context issues.
@@ -1331,6 +1336,11 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                      _aiProposals.remove(_noteKey(entry.startTime.hour, entry.startTime.minute));
                    });
                    _updateEntry(entry, activity, entry.planNotes, isPlan: true);
+                },
+                onRejectProposal: (entry) {
+                   setState(() {
+                     _aiProposals.remove(_noteKey(entry.startTime.hour, entry.startTime.minute));
+                   });
                 },
               );
             }
