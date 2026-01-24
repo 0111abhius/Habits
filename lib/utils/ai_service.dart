@@ -14,7 +14,7 @@ class AIService {
 
   final GenerativeModel _model;
 
-  AIService() : _model = GenerativeModel(model: 'gemini-2.5-flash', apiKey: _apiKey);
+  AIService() : _model = GenerativeModel(model: 'gemini-3-flash', apiKey: _apiKey);
 
   Future<String> getInsights({required String logs, required String goal}) async {
     final prompt = '''
@@ -44,7 +44,7 @@ Pay special attention to where my 'Actual' activity differed from my 'Planned' a
   /// It combines the AI's explicit 'newActivities' list with any activities found in 'schedule'
   /// that are not present in 'existingActivities' (and not 'Sleep').
   static List<String> detectNewActivities(Map<String, dynamic> aiResponseData, List<String> existingActivities) {
-    final schedule = Map<String, String>.from(aiResponseData['schedule'] ?? {});
+    final rawSchedule = aiResponseData['schedule'] as Map<String, dynamic>? ?? {};
     final aiSuggestedNew = List<String>.from(aiResponseData['newActivities'] ?? []);
     final Set<String> detectedNew = {};
 
@@ -52,7 +52,14 @@ Pay special attention to where my 'Actual' activity differed from my 'Planned' a
     detectedNew.addAll(aiSuggestedNew);
 
     // Scan schedule for any other unknown activities
-    for (final act in schedule.values) {
+    for (final val in rawSchedule.values) {
+      String act = '';
+      if (val is String) {
+        act = val;
+      } else if (val is Map) {
+        act = val['activity']?.toString() ?? '';
+      }
+
       if (act.isNotEmpty && !existingActivities.contains(act) && act != 'Sleep') {
         detectedNew.add(act);
       }
@@ -104,7 +111,7 @@ Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
       text = text.replaceAll('```json', '').replaceAll('```', '').trim();
       return text;
     } catch (e) {
-      return '{"error": "$e"}';
+      return jsonEncode({'error': e.toString()});
     }
   }
 
@@ -112,32 +119,41 @@ Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
     required String currentPlan,
     required String goal,
     required List<String> existingActivities,
+    required String wakeTime,
+    required String sleepTime,
   }) async {
     final prompt = '''
 You are a productivity expert assisting in planning a specific day.
 The user has a specific goal for today and possibly some already planned activities.
-Please analyze the current plan (if any) and the goal, then provide specific, actionable suggestions.
-Optimize the schedule to achieve the goal while respecting existing hard commitments if they seem important (or suggest moving them if necessary).
+Your task is to create a COMPLETE day plan from Wake Time ($wakeTime) to Sleep Time ($sleepTime).
 
 GOAL: $goal
 
-EXISTING ACTIVITIES (Strictly reuse these if they fit):
+EXISTING ACTIVITIES (Strictly reuse these if they fit, respect hard commitments):
 ${existingActivities.map((e) => '"$e"').join(', ')}
 
 CURRENT PLAN FOR TODAY:
 $currentPlan
 
+INSTRUCTIONS:
+1. Fill ALL gaps between $wakeTime and $sleepTime. Do not leave unidentified empty blocks.
+2. If a time block should be free, label it explicitly (e.g. "Free Time", "Break", "Relax").
+3. Optimize the schedule to achieve the goal.
+4. Return strict JSON.
+
 IMPORTANT: You must return the response in strict JSON format.
 The JSON must have this structure:
 {
   "schedule": {
-    "08:00": "Activity Name",
-    "09:30": "Activity Name"
+    "08:00": { "activity": "Activity Name", "reason": "Why this fits the goal or fills a gap" },
+    "09:30": { "activity": "Activity Name", "reason": "Why this change is suggested" }
   },
   "newActivities": ["New Activity 1", "New Activity 2"],
-  "reasoning": "Explanation of the changes..."
+  "reasoning": "Overall explanation of the plan..."
 }
 "schedule" keys must be "HH:mm" strings (24-hour format). 
+Each value in "schedule" MUST be an object with "activity" and "reason".
+"reason": A short, convincing reason (max 10 words). If changing an existing activity, explain why. If filling a gap, explain alignment.
 "newActivities" should list any activities suggested that are NOT in the EXISTING ACTIVITIES list.
 "reasoning" should be a concise summary of the plan.
 Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
@@ -150,7 +166,7 @@ Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
       text = text.replaceAll('```json', '').replaceAll('```', '').trim();
       return text;
     } catch (e) {
-      return '{"error": "$e"}';
+      return jsonEncode({'error': e.toString()});
     }
   }
   // --- Interactive Chat & Refinement ---
@@ -201,7 +217,7 @@ Structure:
       text = text.replaceAll('```json', '').replaceAll('```', '').trim();
       return text;
     } catch (e) {
-      return '{"error": "$e"}';
+      return jsonEncode({'error': e.toString()});
     }
   }
   /// Schedules tasks based on history and available time.
@@ -250,7 +266,7 @@ Only include the tasks I asked you to schedule. Do not add arbitrary new activit
       text = text.replaceAll('```json', '').replaceAll('```', '').trim();
       return text;
     } catch (e) {
-      return '{"error": "$e"}';
+      return jsonEncode({'error': e.toString()});
     }
   }
 
@@ -287,7 +303,7 @@ Do not wrap the JSON in markdown code blocks. Just return the raw JSON string.
       text = text.replaceAll('```json', '').replaceAll('```', '').trim();
       return text;
     } catch (e) {
-      return '{"error": "$e"}';
+      return jsonEncode({'error': e.toString()});
     }
   }
   Future<Map<String, dynamic>> analyzeGoalAlignment({
@@ -406,7 +422,7 @@ Do not return markdown. Just the JSON string.
       text = text.replaceAll('```json', '').replaceAll('```', '').trim();
       return text;
     } catch (e) {
-      return '{"error": "$e"}';
+      return jsonEncode({'error': e.toString()});
     }
   }
 }

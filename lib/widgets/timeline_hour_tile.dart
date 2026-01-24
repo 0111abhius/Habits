@@ -43,7 +43,18 @@ class TimelineHourTile extends StatefulWidget {
     required this.onUpdateRecentActivity,
     this.key00,
     this.key30,
+    this.proposedActivity00,
+    this.proposedActivity30,
+    this.proposedReason00,
+    this.proposedReason30,
+    this.onAcceptProposal,
   });
+
+  final String? proposedActivity00;
+  final String? proposedActivity30;
+  final String? proposedReason00;
+  final String? proposedReason30;
+  final Function(TimelineEntry, String)? onAcceptProposal;
 
   @override
   State<TimelineHourTile> createState() => _TimelineHourTileState();
@@ -229,6 +240,30 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
   }
 
   Widget _buildSubBlock(TimelineEntry entry, int minute) {
+    // Check for proposal
+    final String? proposal = minute == 0 ? widget.proposedActivity00 : widget.proposedActivity30;
+    final String? reason = minute == 0 ? widget.proposedReason00 : widget.proposedReason30;
+
+    // Show proposal if exists.
+    // Case 1: Slot is empty -> Show "Ghost Tile"
+    // Case 2: Slot is filled -> Show "Overwrite Proposal"
+    // The previous logic was: if (widget.viewMode == TimelineViewMode.plan && proposal != null && proposal.isNotEmpty)
+    
+    if (widget.viewMode == TimelineViewMode.plan && proposal != null && proposal.isNotEmpty) {
+       // Check if current is filled
+       final currentAct = entry.planactivity;
+       if (currentAct.isEmpty) {
+          return _buildGhostTile(proposal, reason, entry, isOverlay: false);
+       } else if (currentAct != proposal) {
+          // Overwrite suggestion
+          // We render the ghost tile ON TOP of the filled slot? Or replace it?
+          // User asked for: "Show both filled value and AI suggestion value with reason"
+          // Let's use a Stack or Column to show both?
+          // Or a specialized GhostTile that shows "Current: X -> Proposed: Y"
+          return _buildGhostTile(proposal, reason, entry, isOverlay: true);
+       }
+    }
+
     // Prepare available activities
     final available = [...widget.availableActivities];
     // Ensure current values are present
@@ -459,5 +494,79 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
           ),
         );
     }
+  }
+
+  Widget _buildGhostTile(String activity, String? reason, TimelineEntry entry, {required bool isOverlay}) {
+     final currentAct = entry.planactivity;
+     
+     return Container(
+        decoration: BoxDecoration(
+          color: isOverlay ? Colors.orange.withValues(alpha: 0.1) : Colors.deepPurple.withValues(alpha: 0.08),
+          border: Border.all(
+            color: isOverlay ? Colors.orange.withValues(alpha: 0.5) : Colors.deepPurple.withValues(alpha: 0.5),
+            style: BorderStyle.none, 
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+             Row(
+               children: [
+                 Expanded(
+                   child: Row(
+                     children: [
+                       Icon(Icons.auto_awesome, size: 14, color: isOverlay ? Colors.orange[800] : Colors.deepPurple),
+                       const SizedBox(width: 8),
+                       Expanded(
+                         child: RichText(
+                           text: TextSpan(
+                             style: TextStyle(
+                               color: isOverlay ? Colors.orange[900] : Colors.deepPurple,
+                               fontWeight: FontWeight.bold,
+                               fontStyle: FontStyle.italic,
+                               fontSize: 13,
+                             ),
+                             children: [
+                               if (isOverlay) ...[
+                                 TextSpan(text: '$currentAct ', style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)),
+                                 const TextSpan(text: '➔ '),
+                               ],
+                               TextSpan(text: _displayLabel(activity)),
+                             ],
+                           ),
+                           overflow: TextOverflow.ellipsis,
+                         ),
+                       ),
+                     ],
+                   ),
+                 ),
+                 
+                 // Actions
+                 IconButton(
+                   icon: Icon(Icons.check, size: 18, color: isOverlay ? Colors.orange[800] : Colors.deepPurple),
+                   tooltip: 'Accept',
+                   visualDensity: VisualDensity.compact,
+                   onPressed: () => widget.onAcceptProposal?.call(entry, activity),
+                 ),
+               ],
+             ),
+             if (reason != null && reason.isNotEmpty)
+               Padding(
+                 padding: const EdgeInsets.only(left: 22, right: 8, bottom: 4), // align with text
+                 child: Text(
+                   reason,
+                   style: TextStyle(
+                     fontSize: 10, 
+                     color: isOverlay ? Colors.orange[800] : Colors.deepPurple.withValues(alpha: 0.8),
+                   ),
+                   maxLines: 2,
+                   overflow: TextOverflow.ellipsis,
+                 ),
+               ),
+          ],
+        ),
+     );
   }
 }

@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import '../models/timeline_entry.dart';
 import '../models/task.dart';
 import '../models/user_settings.dart';
+import '../models/ai_proposal.dart';
 import '../utils/ai_service.dart';
 import '../widgets/ai_planning_dialogs.dart';
 import '../main.dart'; // for getFirestore()
 
 class DayPlanningAssistant {
-  static Future<void> show(BuildContext context, DateTime date, List<TimelineEntry> currentEntries, List<String> availableActivities, {Function(bool)? onLoading}) async {
+  static Future<Map<String, AIProposal>?> show(BuildContext context, DateTime date, List<TimelineEntry> currentEntries, List<String> availableActivities, {Function(bool)? onLoading}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     String defaultGoal = '';
     TimeOfDay wakeTime = const TimeOfDay(hour: 7, minute: 0);
@@ -58,11 +59,15 @@ class DayPlanningAssistant {
     final bool isFull = freeMinutes <= 180; // <= 3 hours free
 
     // 2. Logic Fork
+    // 2. Logic Fork
     if (isFull && defaultGoal.isNotEmpty) {
         // Auto-Feedback Path
         onLoading?.call(true);
-        await _showFeedbackDialog(context, date, currentEntries, availableActivities, defaultGoal, isAuto: true, onLoading: onLoading);
+        final wStr = '${wakeTime.hour.toString().padLeft(2,'0')}:${wakeTime.minute.toString().padLeft(2,'0')}';
+        final sStr = '${sleepTime.hour.toString().padLeft(2,'0')}:${sleepTime.minute.toString().padLeft(2,'0')}';
+        final result = await _showFeedbackDialog(context, date, currentEntries, availableActivities, defaultGoal, isAuto: true, onLoading: onLoading, wakeTime: wStr, sleepTime: sStr);
         onLoading?.call(false);
+        return result;
     } else {
         // Standard Path
         final goal = await AIGoalDialog.show(
@@ -74,17 +79,22 @@ class DayPlanningAssistant {
 
         if (goal != null) {
            onLoading?.call(true);
+           final wStr = '${wakeTime.hour.toString().padLeft(2,'0')}:${wakeTime.minute.toString().padLeft(2,'0')}';
+           final sStr = '${sleepTime.hour.toString().padLeft(2,'0')}:${sleepTime.minute.toString().padLeft(2,'0')}';
+           Map<String, AIProposal>? result;
            if (isFull) {
-               await _showFeedbackDialog(context, date, currentEntries, availableActivities, goal, isAuto: false, onLoading: onLoading);
+               result = await _showFeedbackDialog(context, date, currentEntries, availableActivities, goal, isAuto: false, onLoading: onLoading, wakeTime: wStr, sleepTime: sStr);
            } else {
-               await _generatePlan(context, date, currentEntries, availableActivities, goal, onLoading: onLoading);
+               result = await _generatePlan(context, date, currentEntries, availableActivities, goal, onLoading: onLoading, wakeTime: wStr, sleepTime: sStr);
            }
            onLoading?.call(false);
+           return result;
         }
     }
+    return null;
   }
 
-  static Future<void> _showFeedbackDialog(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {required bool isAuto, Function(bool)? onLoading}) async {
+  static Future<Map<String, AIProposal>?> _showFeedbackDialog(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {required bool isAuto, Function(bool)? onLoading, required String wakeTime, required String sleepTime}) async {
       // No blocking dialog here, rely on caller or callback
       // But we need to await the AI service. The caller (show) already set loading=true.
       
@@ -92,11 +102,7 @@ class DayPlanningAssistant {
       final ai = AIService();
       final jsonResponse = await ai.getPlanFeedback(currentPlan: currentPlan, goal: goal);
       
-      // Loading is managed by caller for the initial fetch, BUT if we proceed to edit, we need to manage it again?
-      // Actually, if we return from here, the caller sets loading=false.
-      // So we should just do the fetch here.
-      
-      if (!context.mounted) return;
+      if (!context.mounted) return null;
 
       int score = 0;
       String analysis = "Unable to analyze plan.";
@@ -113,7 +119,7 @@ class DayPlanningAssistant {
         analysis = "AI Analysis Error: $jsonResponse";
       }
 
-      await showDialog(
+      return await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Goal Alignment'),
@@ -162,7 +168,7 @@ class DayPlanningAssistant {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Dismiss'),
             ),
             FilledButton(
@@ -173,18 +179,6 @@ class DayPlanningAssistant {
         ),
       ).then((proceed) async {
          if (proceed == true) {
-             // We need to pause loading management here because we are showing a dialog again?
-             // Actually, showFeedbackDialog was called with loading=true.
-             // But we just finished the fetch.
-             // And we popped the dialog.
-             // If we proceed, we need to show Goal Dialog (blocking input) -> then generate (async).
-             // Caller expects us to return when EVERYTHING is done?
-             // No, caller awaits this method. 
-             // We must signal loading=false when showing the dialog so user can interact?
-             // Wait, if loading=true, the BUTTON is a spinner. It doesn't block the UI (that's the requirement).
-             // But we are showing a modal dialog (Goal Alignment).
-             // Showing a modal dialog while the button is spinning is fine, but usually we stop spinning when user input is needed.
-             // So:
              onLoading?.call(false); // Stop spinning while user reviews feedback
              
              final newGoal = await AIGoalDialog.show(
@@ -196,14 +190,10 @@ class DayPlanningAssistant {
              
              if (newGoal != null) {
                  onLoading?.call(true); // Restart spinning
-                 await _generatePlan(context, date, entries, activities, newGoal, onLoading: onLoading);
-                 // onLoading?.call(false); // Logic fork in caller will handle this?
-                 // No, caller awaits _showFeedbackDialog. Caller will turn off loading after return.
-                 // So we can leave it true here, or toggle it?
-                 // Caller: onLoading(true) -> await feedback -> onLoading(false).
-                 // If we toggle inside, caller might toggle again. idempotent callback is preferred.
+                 return await _generatePlan(context, date, entries, activities, newGoal, onLoading: onLoading, wakeTime: wakeTime, sleepTime: sleepTime);
              }
          }
+         return null;
       });
   }
 
@@ -220,7 +210,7 @@ class DayPlanningAssistant {
       return buffer.toString().isEmpty ? '(No activities planned yet)' : buffer.toString();
   }
 
-  static Future<void> _generatePlan(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {Function(bool)? onLoading}) async {
+  static Future<Map<String, AIProposal>?> _generatePlan(BuildContext context, DateTime date, List<TimelineEntry> entries, List<String> activities, String goal, {Function(bool)? onLoading, required String wakeTime, required String sleepTime}) async {
     // No blocking dialog
     
     try {
@@ -240,11 +230,6 @@ class DayPlanningAssistant {
         }
       }
       
-      // Fetch Tasks logic (omitted for brevity, same as before) ...
-      // Can we keep the same logic or do we need to replace it all?
-      // I'll assume we need to replace the loading part mainly. 
-      // The snippet below continues the logic.
-   
       // Fetch Tasks
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
@@ -297,39 +282,93 @@ class DayPlanningAssistant {
         currentPlan: currentPlan,
         goal: goal.isEmpty ? 'Productivity' : goal,
         existingActivities: activities,
+        wakeTime: wakeTime,
+        sleepTime: sleepTime,
       );
 
-      if (!context.mounted) return;
+
+      if (!context.mounted) return null;
       // No loading dialog to pop
       
-      // Stop loading manually if we are preparing to show result?
       onLoading?.call(false); 
-      // Actually caller handles it, but we might want to ensure button stops spinning when dialog shows?
-      // If we stop spinning here, then caller stops spinning again later. Idempotent.
       
       try {
         final data = jsonDecode(jsonStr) as Map<String, dynamic>;
         if (data.containsKey('error')) {
           _showError(context, 'AI Error: ${data['error']}');
-          return;
+          return null;
         }
 
         data['newActivities'] = AIService.detectNewActivities(data, activities);
 
-        AIPlanReviewDialog.show(context, data, (schedule, newActivities) async {
-             await _applyPlan(context, date, schedule, newActivities);
-        }, originalSchedule: originalSchedule);
+        // We skip AIPlanReviewDialog!
+        // We now returning the proposal map directly to TimelineScreen.
+        // BUT we still need to process new activities creation?
+        // Actually, creating new activities (custom tags) should happen upon confirmation.
+        // However, if we just return the map, the UI will try to render "Unknown Tag"?
+        // TimelineHourTile can render any string. 
+        // We should return the map.
+        // Wait, the schedule map from AI is standard keys?
+        // Let's parse it here.
+        
+        // Parse schedule
+        final Map<String, dynamic> rawSchedule = data['schedule'] ?? {};
+        final Map<String, AIProposal> finalSchedule = {};
+        
+        rawSchedule.forEach((key, val) {
+            if (val is String) {
+               // Backward compat or simple structure
+               finalSchedule[key] = AIProposal(activity: val, reason: '');
+            } else if (val is Map) {
+               final act = val['activity']?.toString() ?? '';
+               final reason = val['reason']?.toString() ?? '';
+               if (act.isNotEmpty) {
+                  finalSchedule[key] = AIProposal(activity: act, reason: reason);
+               }
+            }
+        });
+        
+        final List<String> newActs = List<String>.from(data['newActivities'] ?? []);
+        if (newActs.isNotEmpty) {
+            await _createNewActivities(context, newActs);
+        }
+
+        return finalSchedule;
 
       } catch (e) {
-        _showError(context, 'Failed to parse AI response.');
+
+        _showError(context, 'Failed to parse AI response: $e');
+        return null;
       }
     } catch (e) {
       if (context.mounted) {
-        // Stop loading on error
         onLoading?.call(false);
         _showError(context, 'Error: $e');
       }
+      return null;
     }
+  }
+
+  static Future<void> _createNewActivities(BuildContext context, List<String> newActivities) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final settingsRef = getFirestore().collection('user_settings').doc(uid);
+    await getFirestore().runTransaction((tx) async {
+        final doc = await tx.get(settingsRef);
+        if (doc.exists) {
+            final data = doc.data()!;
+            final currentCustom = List<String>.from(data['customActivities'] ?? []);
+            final currentArchived = List<String>.from(data['archivedActivities'] ?? []);
+            for (final act in newActivities) {
+                if (!currentCustom.contains(act)) currentCustom.add(act);
+                if (currentArchived.contains(act)) currentArchived.remove(act);
+            }
+            tx.update(settingsRef, {
+                'customActivities': currentCustom,
+                'archivedActivities': currentArchived,
+            });
+        }
+    });
   }
 
   static void _showError(BuildContext context, String msg) {

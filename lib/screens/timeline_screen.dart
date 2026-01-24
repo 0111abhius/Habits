@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:convert';
+
 import 'social_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'profile_screen.dart';
@@ -11,20 +11,17 @@ import '../main.dart';  // Import for getFirestore()
 import 'package:intl/intl.dart';
 import 'dart:async';
 import '../utils/activities.dart';
-import '../widgets/activity_picker.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'activities_management_screen.dart';
-import 'login_screen.dart';
+
 import '../widgets/timeline_hour_tile.dart';
 import 'day_planning_assistant.dart';
 import '../models/timeline_view_mode.dart';
 import '../widgets/timeline_view_header.dart';
-import '../widgets/day_overview_dialog.dart';
-import '../utils/ai_service.dart';
+
 import '../models/daily_score.dart';
 import '../models/daily_log.dart';
 import '../models/user_settings.dart';
 import '../services/score_service.dart';
+import '../models/ai_proposal.dart';
 import '../widgets/day_score_dialog.dart';
 import '../services/smart_coach_service.dart';
 import '../widgets/coach_card.dart';
@@ -98,6 +95,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   bool _coachDismissed = false;
   bool _calendarVisible = false;
   bool _isAIPlanning = false;
+  Map<String, AIProposal> _aiProposals = {};
 
 
   Map<String, String> _sectionNotes = {}; // Morning, Afternoon, Evening notes
@@ -497,7 +495,12 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     return Scaffold(
       body: Stack(
         children: [
-          GestureDetector(
+          Positioned.fill(child: 
+            Column(
+              children: [
+                Expanded(child: Stack(
+                  children: [
+                    GestureDetector(
             onHorizontalDragEnd: (details) {
           if (details.primaryVelocity == null) return;
           const double sensitivity = 300.0;
@@ -613,7 +616,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                                   : const Icon(Icons.auto_awesome),
                               tooltip: 'AI Plan',
                               onPressed: _isAIPlanning ? null : () async {
-                                await DayPlanningAssistant.show(
+                                final proposals = await DayPlanningAssistant.show(
                                   context, 
                                   selectedDate, 
                                   _cachedEntries, 
@@ -622,12 +625,15 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                                     if (mounted) setState(() => _isAIPlanning = isLoading);
                                   }
                                 );
+                                if (proposals != null && proposals.isNotEmpty) {
+                                  if (mounted) setState(() => _aiProposals = proposals);
+                                }
                                 await _loadUserSettings();
                               },
                             )
                           : OutlinedButton.icon(
                               onPressed: _isAIPlanning ? null : () async {
-                                await DayPlanningAssistant.show(
+                                final proposals = await DayPlanningAssistant.show(
                                   context, 
                                   selectedDate, 
                                   _cachedEntries, 
@@ -636,6 +642,9 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                                     if (mounted) setState(() => _isAIPlanning = isLoading);
                                   }
                                 );
+                                if (proposals != null && proposals.isNotEmpty) {
+                                  if (mounted) setState(() => _aiProposals = proposals);
+                                }
                                 await _loadUserSettings();
                               },
                               icon: _isAIPlanning 
@@ -855,9 +864,109 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
             ),
           ),
         ),
-      ],
-      ),
-    );
+                  ],
+                ),
+              ),
+              if (_aiProposals.isNotEmpty)
+                Container(
+                  color: Theme.of(context).primaryColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: SafeArea(
+                    top: false,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.auto_awesome, color: Colors.white),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            '${_aiProposals.length} suggestions pending',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _aiProposals.clear();
+                            });
+                          },
+                          style: TextButton.styleFrom(foregroundColor: Colors.white),
+                          child: const Text('Discard'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () async {
+                            await _applyAllProposals();
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.white, 
+                            foregroundColor: Theme.of(context).primaryColor,
+                          ),
+                          child: const Text('Apply All'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ), // Positioned.fill
+      ], // Stack children
+    ), // Stack
+  ); // Scaffold
+  }
+
+
+
+  Future<void> _applyAllProposals() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    
+    final batch = getFirestore().batch();
+    final entriesColl = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
+    
+    final existingMap = {
+       for (var e in _cachedEntries) e.id: e
+    };
+
+    for (final entry in _aiProposals.entries) {
+      final parts = entry.key.split(':'); // HH:mm
+      final h = int.parse(parts[0]);
+      final m = int.parse(parts[1]);
+      final minute = m >= 30 ? 30 : 0;
+      
+      final start = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, h, minute);
+      final id = _docId(start);
+      final activity = entry.value.activity;
+
+      if (existingMap.containsKey(id)) {
+         batch.update(entriesColl.doc(id), {'planactivity': activity});
+      } else {
+         final newEntry = TimelineEntry(
+          id: id,
+          userId: uid,
+          date: selectedDate,
+          startTime: start,
+          endTime: start.add(Duration(minutes: minute==0?60:30)),
+          planactivity: activity,
+          planNotes: '',
+          activity: '',
+          notes: '',
+        );
+        batch.set(entriesColl.doc(id), newEntry.toMap());
+      }
+    }
+
+    try {
+      await batch.commit();
+      if (mounted) {
+        setState(() {
+          _aiProposals.clear();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All pending changes applied.')));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error applying changes: $e')));
+    }
   }
 
   void _showDailyBriefing(BuildContext context) {
@@ -937,7 +1046,10 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
               child: FilledButton.icon(
                 onPressed: () async {
                   Navigator.pop(context); // close sheet
-                  await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                  final proposals = await DayPlanningAssistant.show(context, selectedDate, _cachedEntries, _activities);
+                  if (proposals != null && proposals.isNotEmpty) {
+                     if (mounted) setState(() => _aiProposals = proposals);
+                  }
                   await _loadUserSettings();
                 },
                 icon: const Icon(Icons.auto_awesome),
@@ -1107,6 +1219,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
           final tile = ValueListenableBuilder<TimelineViewMode>(
             valueListenable: _viewModeNotifier,
             builder: (context, viewMode, _) {
+            if (key30 == null) {
               return TimelineHourTile(
                 key: ValueKey(hour),
                 hour: hour,
@@ -1149,7 +1262,71 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                 },
                 key00: key00,
                 key30: key30,
+                proposedActivity00: _aiProposals[_noteKey(hour, 0)]?.activity,
+                proposedActivity30: _aiProposals[_noteKey(hour, 30)]?.activity,
+                proposedReason00: _aiProposals[_noteKey(hour, 0)]?.reason,
+                proposedReason30: _aiProposals[_noteKey(hour, 30)]?.reason,
+                onAcceptProposal: (entry, activity) {
+                   setState(() {
+                     _aiProposals.remove(_noteKey(entry.startTime.hour, entry.startTime.minute));
+                   });
+                   _updateEntry(entry, activity, entry.planNotes, isPlan: true);
+                },
               );
+            } else {
+              // This is a tricky one. The previous replace might have context issues.
+              // I will use a larger block or simply match the existing call.
+              return TimelineHourTile(
+                key: ValueKey(hour),
+                hour: hour,
+                entry00: entry00,
+                entry30: entry30,
+                isSplit: _splitHours.contains(hour),
+                viewMode: viewMode,
+                onToggleSplit: () => _toggleSplit(hour),
+                onUpdateEntry: _updateEntry,
+                availableActivities: _flattenCats(),
+                historyActivities: _getSuggestionsForHour(hour),
+                recentActivitiesNotifier: _recentActivitiesNotifier,
+                onPromptCustomActivity: () => _promptCustomActivity(context),
+                onUpdateRecentActivity: (act) {
+                    bool changed = false;
+                    if (_recentActivities.contains(act)) {
+                       if (_recentActivities.indexOf(act) != 0) {
+                         _recentActivities.remove(act);
+                         _recentActivities.insert(0, act);
+                         changed = true;
+                       }
+                    } else {
+                       _recentActivities.insert(0, act);
+                       if (_recentActivities.length > 8) _recentActivities.removeLast();
+                       changed = true;
+                    }
+
+                    if (!_activities.contains(act) && !_archivedActivities.contains(act)) {
+                       _activities.add(act);
+                       _dedupCats(); 
+                       changed = true;
+                    }
+                    if (changed) {
+                      _recentActivitiesNotifier.value = List.from(_recentActivities);
+                      _saveSettings(refreshTimeline: false, showConfirmation: false);
+                    }
+                },
+                key00: key00,
+                key30: key30,
+                proposedActivity00: _aiProposals[_noteKey(hour, 0)]?.activity,
+                proposedActivity30: _aiProposals[_noteKey(hour, 30)]?.activity,
+                proposedReason00: _aiProposals[_noteKey(hour, 0)]?.reason,
+                proposedReason30: _aiProposals[_noteKey(hour, 30)]?.reason,
+                onAcceptProposal: (entry, activity) {
+                   setState(() {
+                     _aiProposals.remove(_noteKey(entry.startTime.hour, entry.startTime.minute));
+                   });
+                   _updateEntry(entry, activity, entry.planNotes, isPlan: true);
+                },
+              );
+            }
             }
           );
 
