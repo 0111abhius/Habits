@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
 import 'screens/timeline_screen.dart';
 import 'screens/habits_screen.dart';
 import 'screens/tasks_screen.dart';
@@ -46,22 +44,30 @@ void main() async {
       ),
     );
     
-    // Configure Firestore settings
-    // Disable persistence on web to avoid "Failed to obtain exclusive access" 
-    // errors when multiple tabs are open.
+    // Offline cache. On web, multi-tab persistence avoids the historical
+    // "Failed to obtain exclusive access" error while keeping data available
+    // offline / on flaky connections and making reloads instant.
     getFirestore().settings = const Settings(
-      persistenceEnabled: false,
+      persistenceEnabled: true,
       cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
     );
-    
+    if (kIsWeb) {
+      try {
+        // ignore: deprecated_member_use
+        await getFirestore().enablePersistence(const PersistenceSettings(synchronizeTabs: true));
+      } catch (e) {
+        debugPrint('Web persistence unavailable: $e');
+      }
+    }
+
     // Ensure auth persistence on web so the user stays signed in across reloads.
     if (kIsWeb) {
       await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
     }
-    
-    print('Firebase initialized successfully');
+
+    debugPrint('Firebase initialized successfully');
   } catch (e) {
-    print('Failed to initialize Firebase: $e');
+    debugPrint('Failed to initialize Firebase: $e');
   }
   
   runApp(const MyApp());

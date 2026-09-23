@@ -4,6 +4,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'login_screen.dart';
 import 'score_config_screen.dart';
+import 'activities_management_screen.dart';
+import 'reminder_settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -211,6 +213,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   onTap: () => _selectTime(_wakeTimeController),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.category_outlined),
+                  title: const Text('Activities'),
+                  subtitle: const Text('Manage the activities you log on the timeline'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ActivitiesManagementScreen()),
+                    );
+                  },
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.copy_all_outlined),
+                  title: const Text('Day templates'),
+                  subtitle: const Text('Default plans per weekday'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.pushNamed(context, '/template'),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.notifications_outlined),
+                  title: const Text('Reminders'),
+                  subtitle: const Text('Browser notifications for planning, logging and habits'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ReminderSettingsScreen()),
+                    );
+                  },
                 ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
                 ListTile(
