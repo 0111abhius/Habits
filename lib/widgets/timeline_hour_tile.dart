@@ -317,6 +317,48 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (isEmpty) ...[
+              // One-click "went as planned" copy from the plan column.
+              if (!isPlan && entry.planactivity.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6, top: 2),
+                  child: Tooltip(
+                    message: 'As planned: ${entry.planactivity}',
+                    child: InkWell(
+                      key: ValueKey('as_planned_${entry.id}'),
+                      onTap: () {
+                        widget.onUpdateRecentActivity(entry.planactivity);
+                        widget.onUpdateEntry(entry, entry.planactivity,
+                            entry.notes.isNotEmpty ? entry.notes : entry.planNotes,
+                            isPlan: false);
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        constraints: BoxConstraints(maxWidth: isCompare ? 70 : 130),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.done_all, size: 14, color: Colors.blue),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                isCompare ? 'Plan' : _displayLabel(entry.planactivity),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.blue),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               // Quick Picks Row
               ValueListenableBuilder<List<String>>(
                 valueListenable: widget.recentActivitiesNotifier,
@@ -333,7 +375,11 @@ class _TimelineHourTileState extends State<TimelineHourTile> {
                     if (!candidates.contains(r)) candidates.add(r);
                   }
                   
-                  final suggestions = candidates.take(quickCount).toList();
+                  final bool asPlannedShown = !isPlan && entry.planactivity.isNotEmpty;
+                  final suggestions = candidates
+                      .where((c) => !asPlannedShown || c != entry.planactivity)
+                      .take(asPlannedShown ? (quickCount - 1).clamp(0, quickCount) : quickCount)
+                      .toList();
 
                   return Row(
                     mainAxisSize: MainAxisSize.min,

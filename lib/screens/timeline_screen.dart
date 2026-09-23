@@ -25,6 +25,9 @@ import '../models/ai_proposal.dart';
 import '../widgets/day_score_dialog.dart';
 import '../services/smart_coach_service.dart';
 import '../widgets/coach_card.dart';
+import '../widgets/day_progress_header.dart';
+import '../widgets/today_tasks_panel.dart';
+import '../widgets/main_scaffold.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -77,6 +80,8 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   List<String> _recentActivities = [];
 
   Set<String> _loggedDates = {};
+  int _logStreak = 0;
+  final ValueNotifier<bool> _tasksExpandedNotifier = ValueNotifier(true);
   late Stream<QuerySnapshot> _currentStream;
   
   final ValueNotifier<List<String>> _recentActivitiesNotifier = ValueNotifier([]);
@@ -666,6 +671,8 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                 onSelected: (value) async {
                   if (value == 'jump_to_now') {
                     _scrollToNow();
+                  } else if (value == 'fill_from_plan') {
+                    await _fillActualFromPlan();
                   } else if (value == 'community') {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialScreen()));
                   } else if (value == 'template') {
@@ -711,6 +718,16 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                         Icon(Icons.access_time, size: 20),
                         SizedBox(width: 12),
                         Text('Jump to Now'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'fill_from_plan',
+                    child: Row(
+                      children: [
+                        Icon(Icons.done_all, size: 20),
+                        SizedBox(width: 12),
+                        Text('Log day as planned'),
                       ],
                     ),
                   ),
@@ -794,16 +811,67 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
           SliverToBoxAdapter(
             child: Column(
               children: [
-                // CalendarStrip removed from here
+                if (MediaQuery.of(context).size.width >= 700)
+                  CalendarStrip(
+                    key: ValueKey('inline_cal_${_loggedDates.length}'),
+                    selectedDate: selectedDate,
+                    onDateSelected: _selectDate,
+                    completedDates: _loggedDates,
+                  ),
+                StreamBuilder<QuerySnapshot>(
+                  stream: _currentStream,
+                  builder: (context, snap) {
+                    final entries = snap.hasData
+                        ? snap.data!.docs.map((d) => TimelineEntry.fromFirestore(d)).toList()
+                        : _cachedEntries;
+                    return ValueListenableBuilder<bool>(
+                      valueListenable: _dayCompleteNotifier,
+                      builder: (context, done, _) => DayProgressHeader(
+                        date: selectedDate,
+                        entries: entries,
+                        wakeTime: wakeTime,
+                        sleepTime: sleepTime,
+                        logStreak: _logStreak,
+                        dayComplete: done,
+                        onFillFromPlan: _fillActualFromPlan,
+                        onMarkComplete: () => _setDayComplete(true),
+                      ),
+                    );
+                  },
+                ),
                 ValueListenableBuilder<bool>(
                   valueListenable: _habitsExpandedNotifier,
                   builder: (context, expanded, _) => ExpansionTile(
                     title: const Text('Habits'),
+                    leading: const Icon(Icons.self_improvement),
+                    dense: true,
                     initiallyExpanded: expanded,
                     maintainState: true,
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 16),
                     onExpansionChanged: (val) => _habitsExpandedNotifier.value = val,
                     children: [
-                      HabitTracker(date: selectedDate),
+                      HabitTracker(
+                        date: selectedDate,
+                        onOpenHabits: () => MainScaffold.selectTab(MainTab.habits),
+                      ),
+                    ],
+                  ),
+                ),
+                ValueListenableBuilder<bool>(
+                  valueListenable: _tasksExpandedNotifier,
+                  builder: (context, expanded, _) => ExpansionTile(
+                    title: const Text('Tasks'),
+                    leading: const Icon(Icons.task_alt),
+                    dense: true,
+                    initiallyExpanded: expanded,
+                    maintainState: true,
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                    onExpansionChanged: (val) => _tasksExpandedNotifier.value = val,
+                    children: [
+                      TodayTasksPanel(
+                        date: selectedDate,
+                        onOpenTasks: () => MainScaffold.selectTab(MainTab.tasks),
+                      ),
                     ],
                   ),
                 ),
@@ -831,7 +899,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
         ],
       ),
       ),
-      if (_calendarVisible)
+      if (_calendarVisible && MediaQuery.of(context).size.width < 700)
         Positioned(
           top: MediaQuery.of(context).padding.top + kToolbarHeight,
           left: 0,
@@ -841,25 +909,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
             color: Theme.of(context).scaffoldBackgroundColor,
             child: CalendarStrip(
               selectedDate: selectedDate,
-              onDateSelected: (date) {
-                setState(() {
-                  _blockKeys.clear();
-                  selectedDate = date;
-                  _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
-                  _initStream();
-                  _loadDayComplete();
-                  _loadHistoricalData();
-                  _calendarVisible = false;
-                });
-                final key = DateFormat('yyyy-MM-dd').format(selectedDate);
-                final double? saved = _offsetCache[key];
-                if (saved != null) {
-                  _pendingScrollOffset = saved;
-                } else {
-                  _pendingScrollOffset = null;
-                  WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
-                }
-              },
+              onDateSelected: _selectDate,
               completedDates: _loggedDates,
             ),
           ),
@@ -916,6 +966,25 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   }
 
 
+
+  void _selectDate(DateTime date) {
+    setState(() {
+      _blockKeys.clear();
+      selectedDate = date;
+      _currentDateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+      _initStream();
+      _loadDayComplete();
+      _loadHistoricalData();
+      _calendarVisible = false;
+    });
+    final double? saved = _offsetCache[_currentDateKey];
+    if (saved != null) {
+      _pendingScrollOffset = saved;
+    } else {
+      _pendingScrollOffset = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWakeTime());
+    }
+  }
 
   Future<void> _applyAllProposals() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -1799,22 +1868,27 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
         .doc(_dateStr(selectedDate));
 
     try {
+      // Merge so that scoreDetails / lastPlannedAt / sectionNotes survive.
+      await ref.set({
+        'date': _dateStr(selectedDate),
+        'complete': val,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       if (val) {
-        await ref.set({
-          'date': _dateStr(selectedDate),
-          'complete': true,
-          'lastUpdated': FieldValue.serverTimestamp(),
-        });
         _loggedDates.add(_dateStr(selectedDate));
-        // Trigger generic overview if not present
-            // Trigger new score calc if not present?
-            // Actually _calculateAndShowScore handles it manually via button.
-            // We shouldn't auto-trigger the OLD one.
-            // if (_dailyScore == null) _calculateAndShowScore(); // Optional: Auto-trigger new score?
-            // User requested manual trigger usually. Let's just remove the old call.
       } else {
-        await ref.delete();
         _loggedDates.remove(_dateStr(selectedDate));
+      }
+      final previous = _logStreak;
+      _logStreak = computeLogStreak(_loggedDates, DateTime.now());
+      if (mounted) {
+        setState(() {});
+        if (val && _logStreak > previous && _logStreak >= 2) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Day logged — $_logStreak days in a row!'),
+            duration: const Duration(seconds: 3),
+          ));
+        }
       }
     } catch (e) {
       // Revert on failure and inform user
@@ -2057,14 +2131,65 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   Future<void> _loadLoggedDates() async {
     final uid=FirebaseAuth.instance.currentUser?.uid; if(uid==null) return;
     final today=DateTime.now();
-    final start=today.subtract(const Duration(days:7));
+    final start=today.subtract(const Duration(days:120));
     final end=today.add(const Duration(days:7));
     final snap=await getFirestore().collection('daily_logs').doc(uid).collection('logs')
       .where('date', isGreaterThanOrEqualTo: DateFormat('yyyy-MM-dd').format(start))
       .where('date', isLessThanOrEqualTo: DateFormat('yyyy-MM-dd').format(end))
       .get();
-    _loggedDates = snap.docs.map((d)=>d.id).toSet();
+    _loggedDates = snap.docs.where((d) => d.data()['complete'] == true).map((d)=>d.id).toSet();
+    _logStreak = computeLogStreak(_loggedDates, today);
     if(mounted) setState((){});
+  }
+
+  /// Consecutive days marked as logged ending today, or yesterday if today
+  /// is not finished yet (today never breaks the streak).
+  static int computeLogStreak(Set<String> loggedDates, DateTime today) {
+    DateTime cursor = DateTime(today.year, today.month, today.day);
+    String key(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
+    if (!loggedDates.contains(key(cursor))) {
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    int streak = 0;
+    while (loggedDates.contains(key(cursor)) && streak < 10000) {
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    return streak;
+  }
+
+  /// Copies the plan into the actual column for hours that have a plan but
+  /// nothing logged yet. On today only hours that have already started are
+  /// filled.
+  Future<void> _fillActualFromPlan() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final now = DateTime.now();
+    final isToday = DateFormat('yyyy-MM-dd').format(now) == _dateStr(selectedDate);
+    final coll = getFirestore().collection('timeline_entries').doc(uid).collection('entries');
+    final batch = getFirestore().batch();
+    int count = 0;
+    for (final e in _cachedEntries) {
+      if (e.planactivity.isEmpty || e.activity.isNotEmpty) continue;
+      if (isToday && e.startTime.isAfter(now)) continue;
+      batch.set(coll.doc(e.id), {
+        'activity': e.planactivity,
+        if (e.notes.isEmpty && e.planNotes.isNotEmpty) 'notes': e.planNotes,
+      }, SetOptions(merge: true));
+      count++;
+    }
+    if (count == 0) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nothing to fill — every planned hour is already logged.')));
+      return;
+    }
+    try {
+      await batch.commit();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Logged $count hour${count == 1 ? '' : 's'} as planned.')));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
   }
 
   Future<void> _clearTimeline({required bool keepSleep}) async {
