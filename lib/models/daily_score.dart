@@ -39,11 +39,24 @@ class DailyScore {
   }
 
   factory DailyScore.fromMap(Map<String, dynamic> data) {
+    final rawDate = data['date'];
+    final DateTime date = rawDate is Timestamp
+        ? rawDate.toDate()
+        : rawDate is String
+            ? (DateTime.tryParse(rawDate) ?? DateTime.now())
+            : DateTime.now();
+    final rawBreakdown = data['breakdown'];
+    final breakdown = <String, int>{};
+    if (rawBreakdown is Map) {
+      rawBreakdown.forEach((k, v) {
+        if (v is num) breakdown[k.toString()] = v.toInt();
+      });
+    }
     return DailyScore(
       userId: data['userId'] as String? ?? '',
-      date: (data['date'] as Timestamp).toDate(),
-      totalScore: data['totalScore'] as int? ?? 0,
-      breakdown: Map<String, int>.from(data['breakdown'] ?? {}),
+      date: date,
+      totalScore: (data['totalScore'] as num?)?.toInt() ?? 0,
+      breakdown: breakdown,
       aiGoalAnalysis: data['aiGoalAnalysis'] as String? ?? '',
       coachTip: data['coachTip'] as String? ?? '',
       computedAt: (data['computedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),

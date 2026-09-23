@@ -28,6 +28,7 @@ import '../widgets/coach_card.dart';
 import '../widgets/day_progress_header.dart';
 import '../widgets/today_tasks_panel.dart';
 import '../widgets/main_scaffold.dart';
+import '../utils/log_streak.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -2140,22 +2141,6 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     _loggedDates = snap.docs.where((d) => d.data()['complete'] == true).map((d)=>d.id).toSet();
     _logStreak = computeLogStreak(_loggedDates, today);
     if(mounted) setState((){});
-  }
-
-  /// Consecutive days marked as logged ending today, or yesterday if today
-  /// is not finished yet (today never breaks the streak).
-  static int computeLogStreak(Set<String> loggedDates, DateTime today) {
-    DateTime cursor = DateTime(today.year, today.month, today.day);
-    String key(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
-    if (!loggedDates.contains(key(cursor))) {
-      cursor = cursor.subtract(const Duration(days: 1));
-    }
-    int streak = 0;
-    while (loggedDates.contains(key(cursor)) && streak < 10000) {
-      streak++;
-      cursor = cursor.subtract(const Duration(days: 1));
-    }
-    return streak;
   }
 
   /// Copies the plan into the actual column for hours that have a plan but
