@@ -1,26 +1,40 @@
-# Deployment Workflow
+# Deployment
 
-You now have two environments:
-1.  **Staging**: `habitslogger.web.app` (Target: `staging`)
-2.  **Production**: `daycoach.web.app` (Target: `app`)
+Two Firebase Hosting targets live in the `habitslogger` project (they share one
+Firestore database and one Auth user pool):
 
-## 1. Test in Staging
-When you have made changes and want to verify them in a live-like environment without affecting users:
+| Target    | URL                                                   | Deployed by                                   |
+|-----------|-------------------------------------------------------|-----------------------------------------------|
+| `staging` | [https://habitslogger.web.app](https://habitslogger.web.app) | every push to `master`, or manual run          |
+| `app`     | [https://daycoach.web.app](https://daycoach.web.app)         | manual run of the "Deploy web" workflow        |
+
+## One-time setup (GitHub Actions)
+
+Add these repository secrets under **Settings → Secrets and variables → Actions**:
+
+- `FIREBASE_SERVICE_ACCOUNT_HABITSLOGGER` – JSON key for a service account with
+  the *Firebase Hosting Admin* role on `habitslogger`. The quickest way to
+  create it is `firebase init hosting:github` from a machine where you are
+  logged in with `firebase login`; it creates the service account and uploads
+  the secret for you (delete the extra workflow files it generates).
+- `GEMINI_API_KEY` – written to `assets/env` at build time so AI features work.
+
+## Deploy to staging
+
+- Merge / push to `master`, **or**
+- GitHub → *Actions* → *Deploy web* → *Run workflow* → target `staging`,
+  picking any branch (useful to try a feature branch before merging).
+
+Pull requests automatically get a 7-day preview URL posted as a comment.
+
+## Promote to production
+
+GitHub → *Actions* → *Deploy web* → *Run workflow* → target `app`.
+
+## Manual deploy from your machine
 
 ```bash
-flutter build web
-firebase deploy --only hosting:staging
+echo "GEMINI_API_KEY=..." > assets/env   # git-ignored
+flutter build web --release
+firebase deploy --only hosting:staging   # or hosting:app
 ```
-Visit [https://habitslogger.web.app](https://habitslogger.web.app) to verify.
-
-## 2. Promote to Production
-When you are happy with the changes in Staging:
-
-```bash
-firebase deploy --only hosting:app
-```
-Visit [https://daycoach.web.app](https://daycoach.web.app) to confirm.
-
-## Summary
-- **Staging**: `firebase deploy --only hosting:staging`
-- **Production**: `firebase deploy --only hosting:app`

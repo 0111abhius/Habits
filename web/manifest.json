@@ -1,12 +1,12 @@
 {
-    "name": "habit_logger",
-    "short_name": "habit_logger",
+    "name": "Day Coach",
+    "short_name": "Day Coach",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#ffffff",
-    "theme_color": "#4CAF50",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "theme_color": "#2E7D32",
+    "description": "Plan your day, log what actually happened, build habits that stick.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {
