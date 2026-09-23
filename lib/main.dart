@@ -47,10 +47,10 @@ void main() async {
     // Offline cache. On web, multi-tab persistence avoids the historical
     // "Failed to obtain exclusive access" error while keeping data available
     // offline / on flaky connections and making reloads instant.
-    getFirestore().settings = const Settings(
-      persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-    );
+    //
+    // On web `Settings.persistenceEnabled` would configure a single-tab
+    // cache and make the multi-tab call below fail with
+    // "SDK cache is already specified", so use exactly one of the two.
     if (kIsWeb) {
       try {
         // ignore: deprecated_member_use
@@ -58,6 +58,11 @@ void main() async {
       } catch (e) {
         debugPrint('Web persistence unavailable: $e');
       }
+    } else {
+      getFirestore().settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      );
     }
 
     // Ensure auth persistence on web so the user stays signed in across reloads.
