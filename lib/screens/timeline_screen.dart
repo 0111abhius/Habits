@@ -197,7 +197,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     // Simple heuristic: don't annoy.
     if (_coachDismissed) return;
 
-    final insight = await SmartCoachService().generateInsight(user.uid);
+    final insight = await SmartCoachService().generateInsight(user.uid, firestore: getFirestore());
     if (mounted && insight != null) {
       setState(() {
         _coachInsight = insight;
