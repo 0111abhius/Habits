@@ -13,6 +13,14 @@ class UserSettings {
   final TimeOfDay planningTargetTime;
   final Map<String, String> folderActivities;
 
+  /// Browser reminder preferences (web only for now).
+  final bool remindersEnabled;
+  final TimeOfDay planReminderTime;
+  final TimeOfDay logReminderTime;
+
+  /// Set once the first-run onboarding has been completed (or skipped).
+  final bool onboardingComplete;
+
   UserSettings({
     required this.userId,
     required this.sleepTime,
@@ -29,7 +37,26 @@ class UserSettings {
       'goal': 30,
     },
     this.planningTargetTime = const TimeOfDay(hour: 10, minute: 0),
+    this.remindersEnabled = false,
+    this.planReminderTime = const TimeOfDay(hour: 8, minute: 30),
+    this.logReminderTime = const TimeOfDay(hour: 21, minute: 0),
+    this.onboardingComplete = false,
   });
+
+  static String fmt(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  static TimeOfDay parseTime(String? s, TimeOfDay fallback) => tryParseTime(s) ?? fallback;
+
+  static TimeOfDay? tryParseTime(String? s) {
+    if (s == null) return null;
+    final parts = s.split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return TimeOfDay(hour: h.clamp(0, 23), minute: m.clamp(0, 59));
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -42,25 +69,19 @@ class UserSettings {
       'folderActivities': folderActivities,
       'goalText': goalText,
       'scoreWeights': scoreWeights,
-      'planningTargetTime': '${planningTargetTime.hour.toString().padLeft(2, '0')}:${planningTargetTime.minute.toString().padLeft(2, '0')}',
+      'planningTargetTime': fmt(planningTargetTime),
+      'remindersEnabled': remindersEnabled,
+      'planReminderTime': fmt(planReminderTime),
+      'logReminderTime': fmt(logReminderTime),
+      'onboardingComplete': onboardingComplete,
     };
   }
 
   factory UserSettings.fromMap(Map<String, dynamic> map) {
-    final sleepTimeParts = (map['sleepTime'] as String? ?? '23:00').split(':');
-    final wakeTimeParts = (map['wakeTime'] as String? ?? '07:00').split(':');
-    final planningTimeParts = (map['planningTargetTime'] as String? ?? '10:00').split(':');
-
     return UserSettings(
       userId: map['userId'] as String? ?? '',
-      sleepTime: TimeOfDay(
-        hour: int.parse(sleepTimeParts[0]),
-        minute: int.parse(sleepTimeParts[1]),
-      ),
-      wakeTime: TimeOfDay(
-        hour: int.parse(wakeTimeParts[0]),
-        minute: int.parse(wakeTimeParts[1]),
-      ),
+      sleepTime: parseTime(map['sleepTime'] as String?, const TimeOfDay(hour: 23, minute: 0)),
+      wakeTime: parseTime(map['wakeTime'] as String?, const TimeOfDay(hour: 7, minute: 0)),
       customActivities: List<String>.from(map['customActivities'] ?? []),
       taskFolders: List<String>.from(map['taskFolders'] ?? []),
       defaultFolderName: map['defaultFolderName'] ?? 'Inbox',
@@ -72,10 +93,11 @@ class UserSettings {
         'execution': 30,
         'goal': 30,
       }),
-      planningTargetTime: TimeOfDay(
-        hour: int.parse(planningTimeParts[0]),
-        minute: int.parse(planningTimeParts[1]),
-      ),
+      planningTargetTime: parseTime(map['planningTargetTime'] as String?, const TimeOfDay(hour: 10, minute: 0)),
+      remindersEnabled: map['remindersEnabled'] as bool? ?? false,
+      planReminderTime: parseTime(map['planReminderTime'] as String?, const TimeOfDay(hour: 8, minute: 30)),
+      logReminderTime: parseTime(map['logReminderTime'] as String?, const TimeOfDay(hour: 21, minute: 0)),
+      onboardingComplete: map['onboardingComplete'] as bool? ?? false,
     );
   }
 
@@ -89,6 +111,10 @@ class UserSettings {
     String? goalText,
     Map<String, int>? scoreWeights,
     TimeOfDay? planningTargetTime,
+    bool? remindersEnabled,
+    TimeOfDay? planReminderTime,
+    TimeOfDay? logReminderTime,
+    bool? onboardingComplete,
   }) {
     return UserSettings(
       userId: userId,
@@ -101,6 +127,10 @@ class UserSettings {
       goalText: goalText ?? this.goalText,
       scoreWeights: scoreWeights ?? this.scoreWeights,
       planningTargetTime: planningTargetTime ?? this.planningTargetTime,
+      remindersEnabled: remindersEnabled ?? this.remindersEnabled,
+      planReminderTime: planReminderTime ?? this.planReminderTime,
+      logReminderTime: logReminderTime ?? this.logReminderTime,
+      onboardingComplete: onboardingComplete ?? this.onboardingComplete,
     );
   }
 } 
