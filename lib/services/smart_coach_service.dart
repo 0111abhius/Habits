@@ -91,30 +91,53 @@ class SmartCoachService {
     return candidates[_random.nextInt(candidates.length)];
   }
 
-  Future<CoachInsight?> generateInsight(String userId) async {
-    // 1. Fetch last 30 days of scores
+  /// Loads the last 30 days of daily logs and derives a data-backed insight.
+  ///
+  /// `daily_logs/{uid}/logs/{yyyy-MM-dd}` documents store `date` as a
+  /// `yyyy-MM-dd` string and the computed score nested under `scoreDetails`,
+  /// so we compare against a string bound and unwrap the nested map.
+  Future<CoachInsight?> generateInsight(String userId, {FirebaseFirestore? firestore}) async {
+    final db = firestore ?? FirebaseFirestore.instance;
     final now = DateTime.now();
-    // Ensure we strip time to be safe, though Timestamp comparison usually handles point-in-time
     final start = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 30));
-    
-    final QuerySnapshot snapshot = await FirebaseFirestore.instance
-        .collection('daily_logs')
-        .doc(userId)
-        .collection('logs')
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-        .orderBy('date', descending: true)
-        .get();
+    final startStr = DateFormat('yyyy-MM-dd').format(start);
 
-    if (snapshot.docs.isEmpty) return _getGeneralMotivation();
-
-    final List<DailyScore> scores = [];
-    for (var doc in snapshot.docs) {
-      if ((doc.data() as Map).containsKey('scoreDetails')) {
-        scores.add(DailyScore.fromFirestore(doc));
-      }
+    List<DailyScore> scores = [];
+    try {
+      final QuerySnapshot snapshot = await db
+          .collection('daily_logs')
+          .doc(userId)
+          .collection('logs')
+          .where('date', isGreaterThanOrEqualTo: startStr)
+          .get();
+      scores = parseScores(snapshot.docs.map((d) => d.data() as Map<String, dynamic>));
+    } catch (_) {
+      return _getGeneralMotivation();
     }
 
-    if (scores.length < 5) return _getGeneralMotivation();
+    return analyzeScores(scores) ?? _getGeneralMotivation();
+  }
+
+  /// Extracts [DailyScore]s from raw daily log documents, skipping days that
+  /// were never scored.
+  static List<DailyScore> parseScores(Iterable<Map<String, dynamic>> docs) {
+    final List<DailyScore> scores = [];
+    for (final data in docs) {
+      final details = data['scoreDetails'];
+      if (details is Map) {
+        try {
+          scores.add(DailyScore.fromMap(Map<String, dynamic>.from(details)));
+        } catch (_) {
+          // Ignore malformed legacy entries.
+        }
+      }
+    }
+    return scores;
+  }
+
+  /// Pure analysis step; returns null when there is not enough signal.
+  CoachInsight? analyzeScores(List<DailyScore> scores) {
+    if (scores.length < 5) return null;
 
     // 2. Analyze Planning Impact
     final plannedDays = scores.where((s) => (s.breakdown['planning'] ?? 0) > 10).toList();
@@ -159,7 +182,7 @@ class SmartCoachService {
       );
     }
 
-    return _getGeneralMotivation();
+    return null;
   }
 
   double _calcAvg(List<DailyScore> list) {

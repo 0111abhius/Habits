@@ -35,7 +35,10 @@ class DailyScore {
   }
 
   factory DailyScore.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    return DailyScore.fromMap(doc.data() as Map<String, dynamic>);
+  }
+
+  factory DailyScore.fromMap(Map<String, dynamic> data) {
     return DailyScore(
       userId: data['userId'] as String? ?? '',
       date: (data['date'] as Timestamp).toDate(),
