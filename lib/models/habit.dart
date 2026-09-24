@@ -34,6 +34,10 @@ class Habit {
   /// Optional `HH:mm` reminder time (used by web reminders).
   final String? reminderTime;
 
+  /// 1 = daily & protected (the only thing kept when a day breaks),
+  /// 2 = a few times a week, 3 = seasonal. 0 = not tiered.
+  final int tier;
+
   /// Denormalized log: `yyyy-MM-dd` -> value logged that day
   /// (1/0 for binary habits, count for counter habits).
   final Map<String, int> history;
@@ -51,6 +55,7 @@ class Habit {
     this.archived = false,
     this.sortOrder = 0,
     this.reminderTime,
+    this.tier = 0,
     this.history = const {},
   });
 
@@ -67,6 +72,7 @@ class Habit {
       'archived': archived,
       'sortOrder': sortOrder,
       'reminderTime': reminderTime,
+      'tier': tier,
       'history': history,
     };
   }
@@ -115,6 +121,7 @@ class Habit {
       archived: map['archived'] as bool? ?? false,
       sortOrder: (map['sortOrder'] as num?)?.toInt() ?? 0,
       reminderTime: map['reminderTime'] as String?,
+      tier: ((map['tier'] as num?)?.toInt() ?? 0).clamp(0, 3),
       history: history,
     );
   }
@@ -130,6 +137,7 @@ class Habit {
     int? sortOrder,
     String? reminderTime,
     bool clearReminder = false,
+    int? tier,
     Map<String, int>? history,
   }) {
     return Habit(
@@ -145,6 +153,7 @@ class Habit {
       archived: archived ?? this.archived,
       sortOrder: sortOrder ?? this.sortOrder,
       reminderTime: clearReminder ? null : (reminderTime ?? this.reminderTime),
+      tier: tier ?? this.tier,
       history: history ?? this.history,
     );
   }
@@ -152,4 +161,18 @@ class Habit {
   /// Human readable cadence, e.g. "Every day" or "4x / week".
   String get frequencyLabel =>
       frequency == HabitFrequency.daily ? 'Every day' : '${weeklyTarget}x / week';
+
+  /// Short label for the tier, empty when untiered.
+  String get tierLabel {
+    switch (tier) {
+      case 1:
+        return 'Tier 1 · protected';
+      case 2:
+        return 'Tier 2';
+      case 3:
+        return 'Tier 3 · seasonal';
+      default:
+        return '';
+    }
+  }
 }
