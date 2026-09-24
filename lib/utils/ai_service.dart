@@ -2,6 +2,8 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:convert';
 
+import 'plan_import_prompt.dart';
+
 class AIService {
   // Now using secured API key from .env
   static String get _apiKey {
@@ -232,6 +234,35 @@ Structure:
       return jsonEncode({'error': e.toString()});
     }
   }
+  /// Converts a free-form plan document into the Day Coach import JSON
+  /// (see [PlanImportPrompt]). Returns raw JSON text; the caller validates
+  /// it with [PlanImportParser]. Throws on API failure.
+  Future<String> convertPlanToImport({
+    required String planText,
+    required List<String> existingActivities,
+    required List<String> existingFolders,
+    String? fixErrors,
+  }) async {
+    final prompt = StringBuffer(PlanImportPrompt.buildPrompt(
+      existingActivities: existingActivities,
+      existingFolders: existingFolders,
+    ).replaceFirst('<paste your plan here>', planText));
+    if (fixErrors != null && fixErrors.trim().isNotEmpty) {
+      prompt.writeln();
+      prompt.writeln('A previous attempt was rejected by the validator with these problems; fix them:');
+      prompt.writeln(fixErrors);
+    }
+    final jsonModel = GenerativeModel(
+      model: 'gemini-2.5-flash',
+      apiKey: _apiKey,
+      generationConfig: GenerationConfig(responseMimeType: 'application/json', temperature: 0.2),
+    );
+    final response = await jsonModel.generateContent([Content.text(prompt.toString())]);
+    var text = response.text ?? '{}';
+    text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+    return text;
+  }
+
   /// Schedules tasks based on history and available time.
   Future<String> scheduleTasks({
     required List<String> tasks, // "Task Name (30m)"
