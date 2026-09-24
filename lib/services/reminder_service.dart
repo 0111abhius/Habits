@@ -21,7 +21,10 @@ class DueReminder {
 
 /// Schedules browser notifications while the web app is open (including as an
 /// installed PWA). Reminders:
+/// - "Plan tomorrow" at [UserSettings.planTomorrowReminderTime] if tomorrow
+///   is not planned yet (the evening shutdown anchor)
 /// - "Plan your day" at [UserSettings.planReminderTime] if nothing is planned
+///   (morning fallback)
 /// - "Log your day" at [UserSettings.logReminderTime] if the day isn't logged
 /// - per-habit reminders at [Habit.reminderTime] when the habit isn't done
 ///
@@ -136,6 +139,20 @@ class ReminderService {
       }
     }
 
+    if (isWithinWindow(settings.planTomorrowReminderTime, now) && !_alreadyFired('plan_tomorrow', now)) {
+      final tomorrow = now.add(const Duration(days: 1));
+      final tomorrowStr = DateFormat('yyyy-MM-dd').format(tomorrow);
+      final log = await getFirestore().collection('daily_logs').doc(uid).collection('logs').doc(tomorrowStr).get();
+      final planned = log.exists && log.data()?['planned'] == true;
+      if (!planned) {
+        due.add(const DueReminder(
+          id: 'plan_tomorrow',
+          title: 'Shutdown: plan tomorrow',
+          body: 'Pick tomorrow\'s top 3 and dump the open loops. Arrive home with work parked.',
+        ));
+      }
+    }
+
     if (isWithinWindow(settings.logReminderTime, now) && !_alreadyFired('log', now)) {
       final log = await getFirestore().collection('daily_logs').doc(uid).collection('logs').doc(todayStr).get();
       final complete = log.exists && log.data()?['complete'] == true;
@@ -176,11 +193,12 @@ class ReminderService {
 
   /// Persists reminder preferences.
   static Future<void> saveSettings(String uid,
-      {required bool enabled, required TimeOfDay planTime, required TimeOfDay logTime}) {
+      {required bool enabled, required TimeOfDay planTime, required TimeOfDay logTime, TimeOfDay? planTomorrowTime}) {
     return getFirestore().collection('user_settings').doc(uid).set({
       'remindersEnabled': enabled,
       'planReminderTime': UserSettings.fmt(planTime),
       'logReminderTime': UserSettings.fmt(logTime),
+      if (planTomorrowTime != null) 'planTomorrowReminderTime': UserSettings.fmt(planTomorrowTime),
     }, SetOptions(merge: true));
   }
 }
