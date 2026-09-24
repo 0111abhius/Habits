@@ -29,6 +29,7 @@ import '../widgets/day_progress_header.dart';
 import '../widgets/today_tasks_panel.dart';
 import '../widgets/main_scaffold.dart';
 import '../utils/log_streak.dart';
+import '../services/template_service.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -1960,54 +1961,23 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
        }
     }
 
-    QuerySnapshot tmplSnap;
-
-    // Fetch user templates matches
-    final tmplQuery = await getFirestore()
+    // Weekday template (with locked / work-block flags) via the shared service.
+    final hasWeekdayTemplate = await getFirestore()
         .collection('user_templates')
         .doc(uid)
         .collection('templates')
         .where('daysOfWeek', arrayContains: selectedDate.weekday)
+        .limit(1)
         .get();
-
-    if (tmplQuery.docs.isNotEmpty) {
-      // Use the first matching template
-      final tmplDocSnapshot = tmplQuery.docs.first;
-      final tmplId = tmplDocSnapshot.id;
-      final tmplData = tmplDocSnapshot.data() as Map<String, dynamic>;
-      
-      // Check validUntil
-      if (tmplData.containsKey('validUntil') && tmplData['validUntil'] != null) {
-        final validUntilTimestamp = tmplData['validUntil'] as Timestamp;
-        final validUntilDate = validUntilTimestamp.toDate();
-        // Compare dates (ignoring time)
-        final vDate = DateTime(validUntilDate.year, validUntilDate.month, validUntilDate.day);
-        final sDate = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-        
-        if (sDate.isAfter(vDate)) {
-           // Template is expired for this date
-           return;
-        }
-      }
-
-      tmplSnap = await getFirestore()
-          .collection('user_templates')
-          .doc(uid)
-          .collection('templates')
-          .doc(tmplId)
-          .collection('entries')
-          .get();
-    } else {
-      // Try to fallback to "Default" or legacy if no specific day match?
-      // Actually, if we migrated everything to "Default" (days 1-7), the above query should catch it if they didn't change it.
-      // But if they created a specific one and removed days from default, we might have gaps.
-      // If no template matches this day, we do nothing.
-      
-      // However, check for LEGACY (pre-migration) just in case user didn't open templates screen yet
-      final legacyColl = getFirestore().collection('template_entries').doc(uid).collection('entries');
-      tmplSnap = await legacyColl.get();
-      if (tmplSnap.docs.isEmpty) return; // No legacy either
+    if (hasWeekdayTemplate.docs.isNotEmpty) {
+      await TemplateService().applyToDate(uid, selectedDate);
+      return;
     }
+
+    // LEGACY (pre-migration) single template, in case the user never opened
+    // the templates screen.
+    final QuerySnapshot tmplSnap =
+        await getFirestore().collection('template_entries').doc(uid).collection('entries').get();
 
     if (tmplSnap.docs.isEmpty) {
       return; // no template entries found in the matching template

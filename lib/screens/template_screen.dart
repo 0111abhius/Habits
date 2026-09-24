@@ -103,6 +103,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
         planNotes: data['planNotes'] ?? data['notes'] ?? '',
         activity: data['activity'] ?? '',
         notes: data['notes'] ?? '',
+        locked: data['locked'] == true,
+        workBlock: data['workBlock'] == true,
       );
       if (minute == 30) _splitHours.add(hour);
     }
@@ -139,8 +141,24 @@ class _TemplateScreenState extends State<TemplateScreen> {
       'planNotes': entry.planNotes,
       'activity': entry.activity,
       'notes': entry.notes,
+      'locked': entry.locked,
+      'workBlock': entry.workBlock,
     });
   }
+
+  TimelineEntry _withFlags(TimelineEntry e, {bool? locked, bool? workBlock, String? planactivity}) => TimelineEntry(
+        id: e.id,
+        userId: e.userId,
+        date: e.date,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        planactivity: planactivity ?? e.planactivity,
+        planNotes: e.planNotes,
+        activity: planactivity ?? e.activity,
+        notes: e.notes,
+        locked: locked ?? e.locked,
+        workBlock: workBlock ?? e.workBlock,
+      );
 
   Future<void> _toggleSplit(int hour) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -222,22 +240,44 @@ class _TemplateScreenState extends State<TemplateScreen> {
                   .toList()),
             onChanged: (val) async {
               if (val == null) return;
-              final updated = TimelineEntry(
-                id: entry.id,
-                userId: entry.userId,
-                date: entry.date,
-                startTime: entry.startTime,
-                endTime: entry.endTime,
-                planactivity: val,
-                planNotes: entry.planNotes,
-                activity: val,
-                notes: entry.notes,
-              );
+              final updated = _withFlags(entry, planactivity: val);
               _entries[id] = updated;
               await _saveEntry(updated);
               if (mounted) setState(() {});
             },
           ),
+          if (entry.planactivity.isNotEmpty)
+            Wrap(
+              spacing: 6,
+              children: [
+                FilterChip(
+                  label: const Text('Anchor'),
+                  tooltip: 'Locked: planners never overwrite this slot',
+                  avatar: Icon(entry.locked ? Icons.lock : Icons.lock_open, size: 16),
+                  selected: entry.locked,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (v) async {
+                    final updated = _withFlags(entry, locked: v, workBlock: v ? false : null);
+                    _entries[id] = updated;
+                    await _saveEntry(updated);
+                    if (mounted) setState(() {});
+                  },
+                ),
+                FilterChip(
+                  label: const Text('Work block'),
+                  tooltip: 'Top tasks get placed into work blocks',
+                  avatar: const Icon(Icons.work_outline, size: 16),
+                  selected: entry.workBlock,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (v) async {
+                    final updated = _withFlags(entry, workBlock: v, locked: v ? false : null);
+                    _entries[id] = updated;
+                    await _saveEntry(updated);
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ],
+            ),
           // Notes are optional for template; keep UI minimal. Commented out.
           /*TextField(
             controller: ctrl,
@@ -444,6 +484,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
             'planNotes':tmplPlanNotes,
             'activity':tmplRetroCat,
             'notes':tmplRetroNotes,
+            'locked': data['locked'] == true,
+            'workBlock': data['workBlock'] == true,
           });
         }
         await batch.commit();
