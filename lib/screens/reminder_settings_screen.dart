@@ -21,6 +21,7 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
   bool _enabled = false;
   TimeOfDay _planTime = const TimeOfDay(hour: 8, minute: 30);
   TimeOfDay _logTime = const TimeOfDay(hour: 21, minute: 0);
+  TimeOfDay _planTomorrowTime = const TimeOfDay(hour: 16, minute: 30);
   String _permission = ReminderService.permission;
 
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
@@ -40,6 +41,7 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
       _enabled = s.remindersEnabled;
       _planTime = s.planReminderTime;
       _logTime = s.logReminderTime;
+      _planTomorrowTime = s.planTomorrowReminderTime;
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -47,7 +49,8 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
   Future<void> _save() async {
     final uid = _uid;
     if (uid == null) return;
-    await ReminderService.saveSettings(uid, enabled: _enabled, planTime: _planTime, logTime: _logTime);
+    await ReminderService.saveSettings(uid,
+        enabled: _enabled, planTime: _planTime, logTime: _logTime, planTomorrowTime: _planTomorrowTime);
   }
 
   Future<void> _requestPermission() async {
@@ -123,9 +126,24 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
                       const Divider(height: 1),
                       ListTile(
                         enabled: _enabled,
+                        leading: const Icon(Icons.bedtime_outlined),
+                        title: const Text('Plan tomorrow'),
+                        subtitle: const Text('The shutdown anchor — only if tomorrow is not planned yet'),
+                        trailing: Text(_planTomorrowTime.format(context), style: theme.textTheme.titleMedium),
+                        onTap: () async {
+                          final t = await showTimePicker(context: context, initialTime: _planTomorrowTime);
+                          if (t != null) {
+                            setState(() => _planTomorrowTime = t);
+                            await _save();
+                          }
+                        },
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        enabled: _enabled,
                         leading: const Icon(Icons.edit_calendar_outlined),
-                        title: const Text('Plan your day'),
-                        subtitle: const Text('Only if nothing is planned yet'),
+                        title: const Text('Morning fallback'),
+                        subtitle: const Text('Only if today still has no plan'),
                         trailing: Text(_planTime.format(context), style: theme.textTheme.titleMedium),
                         onTap: () async {
                           final t = await showTimePicker(context: context, initialTime: _planTime);

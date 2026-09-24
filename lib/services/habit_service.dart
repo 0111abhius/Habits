@@ -30,21 +30,25 @@ class HabitService {
   Stream<List<Habit>> watchHabits(String uid) {
     return _habitsColl(uid).snapshots().map((snap) {
       final habits = snap.docs.map((d) => Habit.fromMap(d.id, d.data())).toList();
-      habits.sort((a, b) {
-        final c = a.sortOrder.compareTo(b.sortOrder);
-        return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
-      });
+      habits.sort(compareHabits);
       return habits;
     });
+  }
+
+  /// Tier 1 (protected) habits float to the top; everything else keeps the
+  /// user's manual order.
+  static int compareHabits(Habit a, Habit b) {
+    final ta = a.tier == 1 ? 0 : 1;
+    final tb = b.tier == 1 ? 0 : 1;
+    if (ta != tb) return ta.compareTo(tb);
+    final c = a.sortOrder.compareTo(b.sortOrder);
+    return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
   }
 
   Future<List<Habit>> fetchHabits(String uid) async {
     final snap = await _habitsColl(uid).get();
     final habits = snap.docs.map((d) => Habit.fromMap(d.id, d.data())).toList();
-    habits.sort((a, b) {
-      final c = a.sortOrder.compareTo(b.sortOrder);
-      return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
-    });
+    habits.sort(HabitService.compareHabits);
     return habits;
   }
 

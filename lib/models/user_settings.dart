@@ -18,6 +18,13 @@ class UserSettings {
   final TimeOfDay planReminderTime;
   final TimeOfDay logReminderTime;
 
+  /// Evening "plan tomorrow" reminder (the shutdown anchor). The morning
+  /// [planReminderTime] is only a fallback when nothing is planned yet.
+  final TimeOfDay planTomorrowReminderTime;
+
+  /// How many tasks the daily focus list should hold (soft limit).
+  final int topTasksLimit;
+
   /// Set once the first-run onboarding has been completed (or skipped).
   final bool onboardingComplete;
 
@@ -40,6 +47,8 @@ class UserSettings {
     this.remindersEnabled = false,
     this.planReminderTime = const TimeOfDay(hour: 8, minute: 30),
     this.logReminderTime = const TimeOfDay(hour: 21, minute: 0),
+    this.planTomorrowReminderTime = const TimeOfDay(hour: 16, minute: 30),
+    this.topTasksLimit = 3,
     this.onboardingComplete = false,
   });
 
@@ -73,6 +82,8 @@ class UserSettings {
       'remindersEnabled': remindersEnabled,
       'planReminderTime': fmt(planReminderTime),
       'logReminderTime': fmt(logReminderTime),
+      'planTomorrowReminderTime': fmt(planTomorrowReminderTime),
+      'topTasksLimit': topTasksLimit,
       'onboardingComplete': onboardingComplete,
     };
   }
@@ -97,6 +108,9 @@ class UserSettings {
       remindersEnabled: map['remindersEnabled'] as bool? ?? false,
       planReminderTime: parseTime(map['planReminderTime'] as String?, const TimeOfDay(hour: 8, minute: 30)),
       logReminderTime: parseTime(map['logReminderTime'] as String?, const TimeOfDay(hour: 21, minute: 0)),
+      planTomorrowReminderTime:
+          parseTime(map['planTomorrowReminderTime'] as String?, const TimeOfDay(hour: 16, minute: 30)),
+      topTasksLimit: ((map['topTasksLimit'] as num?)?.toInt() ?? 3).clamp(1, 10),
       onboardingComplete: map['onboardingComplete'] as bool? ?? false,
     );
   }
@@ -114,6 +128,8 @@ class UserSettings {
     bool? remindersEnabled,
     TimeOfDay? planReminderTime,
     TimeOfDay? logReminderTime,
+    TimeOfDay? planTomorrowReminderTime,
+    int? topTasksLimit,
     bool? onboardingComplete,
   }) {
     return UserSettings(
@@ -130,6 +146,8 @@ class UserSettings {
       remindersEnabled: remindersEnabled ?? this.remindersEnabled,
       planReminderTime: planReminderTime ?? this.planReminderTime,
       logReminderTime: logReminderTime ?? this.logReminderTime,
+      planTomorrowReminderTime: planTomorrowReminderTime ?? this.planTomorrowReminderTime,
+      topTasksLimit: topTasksLimit ?? this.topTasksLimit,
       onboardingComplete: onboardingComplete ?? this.onboardingComplete,
     );
   }

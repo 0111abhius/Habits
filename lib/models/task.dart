@@ -18,6 +18,10 @@ class Task {
   /// creation timestamp so legacy tasks keep a stable order.
   final int sortOrder;
 
+  /// Recurrence rule, see [TaskRepeat]. `null` = one-off task. When a
+  /// repeating task is completed the next occurrence is created.
+  final String? repeat;
+
   Task({
     required this.id,
     required this.userId,
@@ -32,6 +36,7 @@ class Task {
     this.scheduledDate,
     this.activity,
     int? sortOrder,
+    this.repeat,
   }) : sortOrder = sortOrder ?? createdAt.millisecondsSinceEpoch;
 
   Map<String, dynamic> toMap() {
@@ -49,6 +54,7 @@ class Task {
       'scheduledDate': scheduledDate != null ? Timestamp.fromDate(scheduledDate!) : null,
       'activity': activity,
       'sortOrder': sortOrder,
+      'repeat': repeat,
     };
   }
 
@@ -69,6 +75,7 @@ class Task {
       scheduledDate: (data['scheduledDate'] as Timestamp?)?.toDate(),
       activity: data['activity'] as String?,
       sortOrder: (data['sortOrder'] as num?)?.toInt(),
+      repeat: (data['repeat'] as String?)?.isEmpty == true ? null : data['repeat'] as String?,
     );
   }
 
@@ -83,6 +90,8 @@ class Task {
     DateTime? scheduledDate,
     String? activity,
     int? sortOrder,
+    String? repeat,
+    bool clearRepeat = false,
   }) {
     return Task(
       id: id,
@@ -98,7 +107,19 @@ class Task {
       scheduledDate: scheduledDate ?? this.scheduledDate,
       activity: activity ?? this.activity,
       sortOrder: sortOrder ?? this.sortOrder,
+      repeat: clearRepeat ? null : (repeat ?? this.repeat),
     );
+  }
+
+  bool get isRepeating => repeat != null && repeat!.isNotEmpty;
+
+  /// True when the task is flagged for today or scheduled on [day].
+  bool isFocusOn(DateTime day) {
+    final n = DateTime.now();
+    final isTodayDay = day.year == n.year && day.month == n.month && day.day == n.day;
+    if (isTodayDay && isToday) return true;
+    final s = scheduledDate;
+    return s != null && s.year == day.year && s.month == day.month && s.day == day.day;
   }
 
   /// "1h", "1.5h", "45m" style label for the estimate.

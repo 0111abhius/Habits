@@ -10,6 +10,7 @@ class HabitEditorResult {
   final int weeklyTarget;
   final int targetCount;
   final String? reminderTime;
+  final int tier;
 
   const HabitEditorResult({
     required this.name,
@@ -18,6 +19,7 @@ class HabitEditorResult {
     required this.weeklyTarget,
     required this.targetCount,
     this.reminderTime,
+    this.tier = 0,
   });
 }
 
@@ -46,6 +48,7 @@ class _HabitEditorSheetState extends State<_HabitEditorSheet> {
   late HabitFrequency _frequency;
   late int _weeklyTarget;
   late int _targetCount;
+  late int _tier;
   TimeOfDay? _reminder;
 
   static const _suggestions = [
@@ -68,6 +71,7 @@ class _HabitEditorSheetState extends State<_HabitEditorSheet> {
     _frequency = e?.frequency ?? HabitFrequency.daily;
     _weeklyTarget = e?.weeklyTarget ?? 3;
     _targetCount = e?.targetCount ?? 1;
+    _tier = e?.tier ?? 0;
     if (e?.reminderTime != null) {
       final parts = e!.reminderTime!.split(':');
       if (parts.length == 2) {
@@ -93,6 +97,7 @@ class _HabitEditorSheetState extends State<_HabitEditorSheet> {
         frequency: _frequency,
         weeklyTarget: _weeklyTarget,
         targetCount: _type == HabitType.counter ? _targetCount : 1,
+        tier: _tier,
         reminderTime: _reminder == null
             ? null
             : '${_reminder!.hour.toString().padLeft(2, '0')}:${_reminder!.minute.toString().padLeft(2, '0')}',
@@ -207,6 +212,24 @@ class _HabitEditorSheetState extends State<_HabitEditorSheet> {
               ),
             ],
             const SizedBox(height: 16),
+            Text('Tier', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (v, label) in const [(0, 'None'), (1, '1 · protected'), (2, '2 · regular'), (3, '3 · seasonal')])
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: _tier == v,
+                    onSelected: (_) => setState(() => _tier = v),
+                  ),
+              ],
+            ),
+            Text(
+              'Tier 1 is the only thing you protect when a day breaks. Tier 1 habits are listed first.',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.notifications_outlined),

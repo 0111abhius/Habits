@@ -11,6 +11,15 @@ class TimelineEntry {
   final String activity;
   final String notes;
 
+  /// Anchor slot: planners (AI, "place into work blocks") must not overwrite it.
+  final bool locked;
+
+  /// Flexible work slot that prioritized tasks can be placed into.
+  final bool workBlock;
+
+  /// Task that was placed into this slot, if any.
+  final String? taskId;
+
   TimelineEntry({
     required this.id,
     required this.userId,
@@ -21,7 +30,12 @@ class TimelineEntry {
     this.planNotes = '',
     required this.activity,
     required this.notes,
+    this.locked = false,
+    this.workBlock = false,
+    this.taskId,
   });
+
+  Duration get duration => endTime.difference(startTime);
 
   Map<String, dynamic> toMap() {
     return {
@@ -34,11 +48,18 @@ class TimelineEntry {
       'planNotes': planNotes,
       'activity': activity,
       'notes': notes,
+      if (locked) 'locked': true,
+      if (workBlock) 'workBlock': true,
+      if (taskId != null) 'taskId': taskId,
     };
   }
 
   factory TimelineEntry.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    return TimelineEntry.fromMap(doc.id, data);
+  }
+
+  factory TimelineEntry.fromMap(String id, Map<String, dynamic> data) {
     DateTime parseDateField(dynamic raw) {
       if (raw is Timestamp) return raw.toDate();
       if (raw is String) {
@@ -49,8 +70,8 @@ class TimelineEntry {
     }
 
     return TimelineEntry(
-      id: doc.id,
-      userId: data['userId'] as String,
+      id: id,
+      userId: data['userId'] as String? ?? '',
       date: parseDateField(data['date']),
       startTime: (data['startTime'] as Timestamp?)?.toDate() ?? DateTime.now(),
       endTime: (data['endTime'] as Timestamp?)?.toDate() ?? DateTime.now().add(const Duration(hours: 1)),
@@ -58,6 +79,9 @@ class TimelineEntry {
       planNotes: data['planNotes'] as String? ?? '',
       activity: data['activity'] as String? ?? '',
       notes: data['notes'] as String? ?? '',
+      locked: data['locked'] == true,
+      workBlock: data['workBlock'] == true,
+      taskId: data['taskId'] as String?,
     );
   }
 

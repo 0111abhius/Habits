@@ -6,6 +6,7 @@ import 'login_screen.dart';
 import 'score_config_screen.dart';
 import 'activities_management_screen.dart';
 import 'reminder_settings_screen.dart';
+import 'plan_import_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -224,6 +225,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const ActivitiesManagementScreen()),
+                    );
+                  },
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.upload_file_outlined),
+                  title: const Text('Import plan'),
+                  subtitle: const Text('Turn a plan written with an LLM into habits, templates and tasks'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PlanImportScreen()),
                     );
                   },
                 ),
