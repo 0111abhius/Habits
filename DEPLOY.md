@@ -5,7 +5,7 @@ Firestore database and one Auth user pool):
 
 | Target    | URL                                                   | Deployed by                                   |
 |-----------|-------------------------------------------------------|-----------------------------------------------|
-| `staging` | [https://habitslogger.web.app](https://habitslogger.web.app) | every push to `master`, or manual run          |
+| `staging` | [https://habitslogger.web.app](https://habitslogger.web.app) | every push to `main` (or `master`), or manual run          |
 | `app`     | [https://daycoach.web.app](https://daycoach.web.app)         | manual run of the "Deploy web" workflow        |
 
 ## One-time setup (GitHub Actions)
@@ -21,7 +21,7 @@ Add these repository secrets under **Settings → Secrets and variables → Acti
 
 ## Deploy to staging
 
-- Merge / push to `master`, **or**
+- Merge / push to `main`, **or**
 - GitHub → *Actions* → *Deploy web* → *Run workflow* → target `staging`,
   picking any branch (useful to try a feature branch before merging).
 
