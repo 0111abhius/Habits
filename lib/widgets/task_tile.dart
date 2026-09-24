@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/task.dart';
+import '../utils/task_repeat.dart';
 
 enum TaskTileAction { schedule, moveFolder, duplicate, delete, clearDate }
 
@@ -142,6 +143,8 @@ class TaskTile extends StatelessWidget {
                             ),
                           if (folderLabel != null)
                             _buildChip(context, label: folderLabel!, icon: Icons.folder_outlined, color: theme.colorScheme.outline),
+                          if (task.isRepeating)
+                            _buildChip(context, label: TaskRepeat.label(task.repeat), icon: Icons.repeat, color: Colors.teal),
                           if (task.isCompleted && task.completedAt != null)
                             _buildChip(context,
                                 label: 'Done ${DateFormat('MMM d').format(task.completedAt!)}',

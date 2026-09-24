@@ -5,6 +5,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../models/task.dart';
 import '../models/user_settings.dart';
+import '../services/day_plan_service.dart';
+import '../utils/task_repeat.dart';
+import 'plan_tomorrow_screen.dart';
+import '../widgets/main_scaffold.dart';
 import '../models/timeline_entry.dart';
 import '../widgets/ai_scheduling_dialog.dart';
 import '../widgets/activity_picker.dart';
@@ -34,6 +38,8 @@ class _TasksScreenState extends State<TasksScreen> {
   _TaskViewMode _viewMode = _TaskViewMode.folder;
   final Map<String, bool> _dateExpansions = {};
   Map<String, String> _folderActivities = {};
+  int _topTasksLimit = 3;
+  bool _placing = false;
   List<String> _allActivities = [];
   List<String> _recentActivities = [];
   bool _todayExpanded = true;
@@ -80,6 +86,7 @@ class _TasksScreenState extends State<TasksScreen> {
             _foldersLoaded = true;
             _defaultFolderName = settings.defaultFolderName;
             _folderActivities = settings.folderActivities;
+            _topTasksLimit = settings.topTasksLimit;
             _recentActivities = settings.customActivities;
             _allActivities = [...kDefaultActivities, ...settings.customActivities];
             for (var f in _folders) {
@@ -335,6 +342,7 @@ class _TasksScreenState extends State<TasksScreen> {
     String? activity,
     DateTime? scheduledDate,
     String notes = '',
+    String? repeat,
   }) async {
     if (title.isEmpty) return;
     final uid = _uid;
@@ -354,6 +362,7 @@ class _TasksScreenState extends State<TasksScreen> {
         folder: folder,
         activity: activity,
         scheduledDate: scheduledDate,
+        repeat: repeat,
         // Negative so new tasks land at the top of their folder.
         sortOrder: -now.millisecondsSinceEpoch,
       );
@@ -393,6 +402,7 @@ class _TasksScreenState extends State<TasksScreen> {
     bool isToday = taskToEdit?.isToday ?? false;
     String? selectedFolder = taskToEdit?.folder ?? _selectedFolder;
     DateTime? scheduledDate = taskToEdit?.scheduledDate;
+    String? repeat = taskToEdit?.repeat;
 
     void submit(BuildContext ctx) {
       final text = titleController.text.trim();
@@ -401,7 +411,7 @@ class _TasksScreenState extends State<TasksScreen> {
       Navigator.pop(ctx);
       if (isEditing) {
         _updateTaskFull(taskToEdit, text, notesController.text.trim(), estimatedMinutes, isToday, selectedFolder,
-            derivedActivity, scheduledDate);
+            derivedActivity, scheduledDate, repeat);
       } else {
         _addTask(
           title: text,
@@ -411,6 +421,7 @@ class _TasksScreenState extends State<TasksScreen> {
           folder: selectedFolder,
           activity: derivedActivity,
           scheduledDate: scheduledDate,
+          repeat: repeat,
         );
       }
     }
@@ -513,6 +524,15 @@ class _TasksScreenState extends State<TasksScreen> {
                         },
                         onDeleted: scheduledDate != null ? () => setSheetState(() => scheduledDate = null) : null,
                       ),
+                      InputChip(
+                        avatar: Icon(Icons.repeat, size: 16, color: repeat != null ? Colors.teal : null),
+                        label: Text(repeat == null ? 'Repeat' : TaskRepeat.label(repeat)),
+                        onPressed: () async {
+                          final picked = await _pickRepeat(context, current: repeat);
+                          if (picked != null) setSheetState(() => repeat = picked.isEmpty ? null : picked);
+                        },
+                        onDeleted: repeat != null ? () => setSheetState(() => repeat = null) : null,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -540,6 +560,64 @@ class _TasksScreenState extends State<TasksScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Returns the chosen rule, '' for "no repeat", or null when cancelled.
+  Future<String?> _pickRepeat(BuildContext context, {String? current}) {
+    const options = <String, String>{
+      '': 'Does not repeat',
+      'daily': 'Every day',
+      'weekdays': 'Weekdays',
+      'weekly:mon': 'Every Monday',
+      'weekly:fri': 'Every Friday',
+      'weekly:sat': 'Every Saturday',
+      'weekly:sun': 'Every Sunday',
+      'monthly:1': 'Monthly on the 1st',
+    };
+    return showDialog<String>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: const Text('Repeat'),
+        children: [
+          ...options.entries.map((e) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(c, e.key),
+                child: Text(e.value,
+                    style: TextStyle(fontWeight: (current ?? '') == e.key ? FontWeight.bold : null)),
+              )),
+          SimpleDialogOption(
+            onPressed: () async {
+              final ctrl = TextEditingController(text: current ?? '');
+              final custom = await showDialog<String>(
+                context: c,
+                builder: (d) => AlertDialog(
+                  title: const Text('Custom rule'),
+                  content: TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(hintText: 'weekly:mon,wed  ·  monthly:15'),
+                    onSubmitted: (v) => Navigator.pop(d, v),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
+                    FilledButton(onPressed: () => Navigator.pop(d, ctrl.text), child: const Text('OK')),
+                  ],
+                ),
+              );
+              if (custom == null) return;
+              final norm = TaskRepeat.normalize(custom);
+              if (norm == null && custom.trim().isNotEmpty) {
+                if (c.mounted) {
+                  ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('Could not understand that rule.')));
+                }
+                return;
+              }
+              if (c.mounted) Navigator.pop(c, norm ?? '');
+            },
+            child: const Text('Custom…'),
+          ),
+        ],
       ),
     );
   }
@@ -572,7 +650,7 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   Future<void> _updateTaskFull(Task task, String title, String notes, int mins, bool isToday, String? folder,
-      String? activity, DateTime? scheduled) async {
+      String? activity, DateTime? scheduled, String? repeat) async {
     try {
       await getFirestore().collection('tasks').doc(task.id).update({
         'title': title,
@@ -582,6 +660,7 @@ class _TasksScreenState extends State<TasksScreen> {
         'folder': folder,
         'activity': activity,
         'scheduledDate': scheduled != null ? Timestamp.fromDate(scheduled) : null,
+        'repeat': repeat,
       });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error updating task: $e')));
@@ -596,6 +675,10 @@ class _TasksScreenState extends State<TasksScreen> {
         'completedAt': newStatus ? Timestamp.fromDate(DateTime.now()) : null,
         if (newStatus) 'isToday': false,
       });
+      String? rolledId;
+      if (newStatus && task.isRepeating) {
+        rolledId = await DayPlanService().rollRepeatingTask(task);
+      }
       if (newStatus && mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -603,11 +686,14 @@ class _TasksScreenState extends State<TasksScreen> {
           duration: const Duration(seconds: 3),
           action: SnackBarAction(
             label: 'Undo',
-            onPressed: () => getFirestore().collection('tasks').doc(task.id).update({
-              'isCompleted': false,
-              'completedAt': null,
-              'isToday': task.isToday,
-            }),
+            onPressed: () {
+              getFirestore().collection('tasks').doc(task.id).update({
+                'isCompleted': false,
+                'completedAt': null,
+                'isToday': task.isToday,
+              });
+              if (rolledId != null) getFirestore().collection('tasks').doc(rolledId).delete();
+            },
           ),
         ));
       }
@@ -847,7 +933,8 @@ class _TasksScreenState extends State<TasksScreen> {
       grouped.putIfAbsent(folder, () => []).add(task);
     }
 
-    final todayTasks = allTasks.where((t) => !t.isCompleted && t.isToday).toList()
+    final todayDate = DateTime.now();
+    final todayTasks = allTasks.where((t) => !t.isCompleted && t.isFocusOn(todayDate)).toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     final doneToday = allTasks.where((t) {
       if (!t.isCompleted || t.completedAt == null) return false;
@@ -870,10 +957,12 @@ class _TasksScreenState extends State<TasksScreen> {
     final theme = Theme.of(context);
     final totalMin = todayTasks.fold<int>(0, (s, t) => s + t.estimatedMinutes);
     final hours = totalMin / 60;
+    final overCap = todayTasks.length > _topTasksLimit;
     final summary = todayTasks.isEmpty
         ? (doneToday > 0 ? '$doneToday done today' : 'Nothing planned — flag tasks with the sun icon')
-        : '${todayTasks.length} task${todayTasks.length == 1 ? '' : 's'} · ${hours == hours.roundToDouble() ? hours.toInt() : hours.toStringAsFixed(1)}h'
-            '${doneToday > 0 ? ' · $doneToday done' : ''}';
+        : '${todayTasks.length}${overCap ? '/$_topTasksLimit' : ''} task${todayTasks.length == 1 ? '' : 's'} · ${hours == hours.roundToDouble() ? hours.toInt() : hours.toStringAsFixed(1)}h'
+            '${doneToday > 0 ? ' · $doneToday done' : ''}'
+            '${overCap ? ' · more than your top $_topTasksLimit' : ''}';
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -891,6 +980,14 @@ class _TasksScreenState extends State<TasksScreen> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                IconButton(
+                  tooltip: 'Plan tomorrow',
+                  icon: const Icon(Icons.nightlight_outlined),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const PlanTomorrowScreen()),
+                  ),
+                ),
                 if (todayTasks.isNotEmpty)
                   TextButton(
                     onPressed: () => _clearTodayFlags(todayTasks),
@@ -901,6 +998,29 @@ class _TasksScreenState extends State<TasksScreen> {
             ),
             onTap: () => setState(() => _todayExpanded = !_todayExpanded),
           ),
+          if (_todayExpanded && todayTasks.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Row(
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed: _placing ? null : () => _placeInWorkBlocks(todayTasks),
+                    icon: _placing
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.schedule_send_outlined, size: 18),
+                    label: const Text('Place in work blocks'),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Fills today\'s remaining work blocks in this order.',
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      maxLines: 2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_todayExpanded && todayTasks.isNotEmpty)
             ReorderableListView.builder(
               shrinkWrap: true,
@@ -926,6 +1046,34 @@ class _TasksScreenState extends State<TasksScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _placeInWorkBlocks(List<Task> todayTasks) async {
+    final uid = _uid;
+    if (uid == null || todayTasks.isEmpty) return;
+    setState(() => _placing = true);
+    try {
+      final outcome = await DayPlanService().placeTasks(
+        uid,
+        DateTime.now(),
+        todayTasks,
+        folderActivities: _folderActivities,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(outcome.summary()),
+          duration: const Duration(seconds: 6),
+          action: outcome.result.placements.isEmpty
+              ? null
+              : SnackBarAction(label: 'Today', onPressed: () => MainScaffold.selectTab(MainTab.today)),
+        ));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not place tasks: $e')));
+    } finally {
+      if (mounted) setState(() => _placing = false);
+    }
   }
 
   Widget _buildDateView(List<Task> allTasks) {
