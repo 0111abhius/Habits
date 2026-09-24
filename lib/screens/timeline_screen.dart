@@ -30,6 +30,7 @@ import '../widgets/today_tasks_panel.dart';
 import '../widgets/main_scaffold.dart';
 import '../utils/log_streak.dart';
 import '../services/template_service.dart';
+import 'plan_tomorrow_screen.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -129,6 +130,15 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
     _loadLoggedDates();
     _loadHistoricalData();
     _loadCoachInsight();
+    MainScaffold.dateRequest.addListener(_onDateRequest);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onDateRequest());
+  }
+
+  void _onDateRequest() {
+    final d = MainScaffold.dateRequest.value;
+    if (d == null || !mounted) return;
+    MainScaffold.dateRequest.value = null;
+    _selectDate(d);
   }
 
   @override
@@ -141,6 +151,7 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    MainScaffold.dateRequest.removeListener(_onDateRequest);
     _dayCheckTimer?.cancel();
     _scrollController.dispose();
     _sleepTimeController.dispose();
@@ -675,6 +686,9 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                     _scrollToNow();
                   } else if (value == 'fill_from_plan') {
                     await _fillActualFromPlan();
+                  } else if (value == 'plan_tomorrow') {
+                    await Navigator.push(context, MaterialPageRoute(builder: (_) => const PlanTomorrowScreen()));
+                    if (mounted) setState(() {});
                   } else if (value == 'community') {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialScreen()));
                   } else if (value == 'template') {
@@ -720,6 +734,16 @@ class _TimelineScreenState extends State<TimelineScreen> with WidgetsBindingObse
                         Icon(Icons.access_time, size: 20),
                         SizedBox(width: 12),
                         Text('Jump to Now'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'plan_tomorrow',
+                    child: Row(
+                      children: [
+                        Icon(Icons.nightlight_outlined, size: 20),
+                        SizedBox(width: 12),
+                        Text('Plan tomorrow'),
                       ],
                     ),
                   ),

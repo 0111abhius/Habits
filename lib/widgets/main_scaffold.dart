@@ -5,6 +5,7 @@ import '../screens/timeline_screen.dart';
 import '../screens/habits_screen.dart';
 import '../screens/analytics_screen.dart';
 import '../screens/tasks_screen.dart';
+import '../screens/plan_tomorrow_screen.dart';
 import '../services/reminder_service.dart';
 
 enum MainTab { today, tasks, habits, progress }
@@ -17,6 +18,13 @@ class MainScaffold extends StatefulWidget {
   static final ValueNotifier<MainTab> tabNotifier = ValueNotifier(MainTab.today);
 
   static void selectTab(MainTab tab) => tabNotifier.value = tab;
+
+  /// Ask the Today tab to show a specific date (consumed by TimelineScreen).
+  static final ValueNotifier<DateTime?> dateRequest = ValueNotifier(null);
+  static void openDay(DateTime date) {
+    dateRequest.value = DateTime(date.year, date.month, date.day);
+    selectTab(MainTab.today);
+  }
 
   @override
   State<MainScaffold> createState() => _MainScaffoldState();
@@ -52,8 +60,14 @@ class _MainScaffoldState extends State<MainScaffold> {
       content: Text('${r.title} — ${r.body}'),
       duration: const Duration(seconds: 8),
       action: SnackBarAction(
-        label: r.id.startsWith('habit') ? 'Habits' : 'Open',
-        onPressed: () => MainScaffold.selectTab(r.id.startsWith('habit') ? MainTab.habits : MainTab.today),
+        label: r.id.startsWith('habit') ? 'Habits' : (r.id == 'plan_tomorrow' ? 'Plan' : 'Open'),
+        onPressed: () {
+          if (r.id == 'plan_tomorrow') {
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PlanTomorrowScreen()));
+          } else {
+            MainScaffold.selectTab(r.id.startsWith('habit') ? MainTab.habits : MainTab.today);
+          }
+        },
       ),
     ));
   }
