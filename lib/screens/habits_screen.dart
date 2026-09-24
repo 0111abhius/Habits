@@ -37,7 +37,7 @@ class _HabitsScreenState extends State<HabitsScreen> {
     if (uid == null) return;
     final result = await showHabitEditor(context);
     if (result == null) return;
-    await _service.addHabit(
+    final created = await _service.addHabit(
       uid: uid,
       name: result.name,
       type: result.type,
@@ -46,6 +46,7 @@ class _HabitsScreenState extends State<HabitsScreen> {
       targetCount: result.targetCount,
       reminderTime: result.reminderTime,
     );
+    if (result.tier > 0) await _service.updateHabit(uid, created.copyWith(tier: result.tier));
   }
 
   Future<void> _edit(Habit habit) async {
@@ -63,6 +64,7 @@ class _HabitsScreenState extends State<HabitsScreen> {
         targetCount: result.targetCount,
         reminderTime: result.reminderTime,
         clearReminder: result.reminderTime == null,
+        tier: result.tier,
       ),
     );
   }
@@ -397,6 +399,11 @@ class _HabitRow extends StatelessWidget {
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
+                        if (habit.tier == 1)
+                          Tooltip(
+                            message: 'Tier 1 · protected',
+                            child: Icon(Icons.shield_outlined, size: 14, color: theme.colorScheme.primary),
+                          ),
                         StreakBadge(habit: habit, today: today),
                         WeeklyProgressPill(habit: habit, date: date),
                         if (!wide) HabitDotRow(habit: habit, endDate: date, dotSize: 8),

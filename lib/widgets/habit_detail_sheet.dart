@@ -54,7 +54,7 @@ Future<HabitDetailAction?> showHabitDetail(BuildContext context, Habit habit, {D
                       children: [
                         Text(habit.name, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                         Text(
-                          '${habit.frequencyLabel}${habit.type == HabitType.counter ? ' · goal ${habit.targetCount}' : ''}',
+                          '${habit.frequencyLabel}${habit.type == HabitType.counter ? ' · goal ${habit.targetCount}' : ''}${habit.tier > 0 ? ' · ${habit.tierLabel}' : ''}',
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ],
