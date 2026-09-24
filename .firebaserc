@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "habitslogger"
+  },
+  "targets": {
+    "habitslogger": {
+      "hosting": {
+        "app": [
+          "daycoach"
+        ],
+        "staging": [
+          "habitslogger"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

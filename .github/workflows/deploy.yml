@@ -1,0 +1,68 @@
+# Builds the Flutter web app and deploys it to Firebase Hosting.
+#
+# - Every push to `master` deploys to STAGING (https://habitslogger.web.app).
+# - "Run workflow" (workflow_dispatch) lets you deploy any branch to staging
+#   or promote to PRODUCTION (https://daycoach.web.app).
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   FIREBASE_SERVICE_ACCOUNT_HABITSLOGGER  JSON key of a service account with
+#                                          the "Firebase Hosting Admin" role on
+#                                          project `habitslogger`
+#                                          (`firebase init hosting:github` can
+#                                          create it for you)
+#   GEMINI_API_KEY                         Gemini key written to assets/env
+name: Deploy web
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Hosting target
+        type: choice
+        required: true
+        default: staging
+        options: [staging, app]
+
+concurrency:
+  group: deploy-${{ github.event.inputs.target || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    env:
+      TARGET: ${{ github.event.inputs.target || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Write runtime env
+        run: |
+          mkdir -p assets
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > assets/env
+
+      - run: flutter pub get
+
+      - name: Analyze app code
+        run: flutter analyze lib --no-fatal-warnings --no-fatal-infos
+
+      - name: Unit tests
+        run: flutter test test/habit_stats_test.dart test/task_quick_add_test.dart test/smart_coach_service_test.dart test/user_settings_model_test.dart test/habit_model_test.dart test/timeline_entry_model_test.dart test/activities_utils_test.dart test/log_streak_test.dart
+
+      - name: Build web
+        run: flutter build web --release
+
+      - name: Deploy to Firebase Hosting (${{ env.TARGET }})
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HABITSLOGGER }}
+          projectId: habitslogger
+          channelId: live
+          target: ${{ env.TARGET }}

@@ -1,0 +1,42 @@
+# Builds the Flutter web app for every pull request and publishes a temporary
+# Firebase Hosting preview channel (URL is posted on the PR). Uses the same
+# secrets as deploy.yml.
+name: Preview on PR
+
+on:
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  build_and_preview:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Write runtime env
+        run: |
+          mkdir -p assets
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > assets/env
+
+      - run: flutter pub get
+      - run: flutter analyze lib --no-fatal-warnings --no-fatal-infos
+      - run: flutter build web --release
+
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HABITSLOGGER }}
+          projectId: habitslogger
+          target: staging
+          expires: 7d
