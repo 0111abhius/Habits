@@ -38,6 +38,9 @@ class Habit {
   /// 2 = a few times a week, 3 = seasonal. 0 = not tiered.
   final int tier;
 
+  /// Whether this is an essential Core habit (70% score weight) or a Bonus habit (30%).
+  final bool isCore;
+
   /// Denormalized log: `yyyy-MM-dd` -> value logged that day
   /// (1/0 for binary habits, count for counter habits).
   final Map<String, int> history;
@@ -56,8 +59,9 @@ class Habit {
     this.sortOrder = 0,
     this.reminderTime,
     this.tier = 0,
+    bool? isCore,
     this.history = const {},
-  });
+  }) : isCore = isCore ?? (tier == 1 || tier == 0);
 
   Map<String, dynamic> toMap() {
     return {
@@ -72,7 +76,8 @@ class Habit {
       'archived': archived,
       'sortOrder': sortOrder,
       'reminderTime': reminderTime,
-      'tier': tier,
+      'tier': isCore ? 1 : (tier == 1 ? 0 : tier),
+      'isCore': isCore,
       'history': history,
     };
   }
@@ -122,6 +127,7 @@ class Habit {
       sortOrder: (map['sortOrder'] as num?)?.toInt() ?? 0,
       reminderTime: map['reminderTime'] as String?,
       tier: ((map['tier'] as num?)?.toInt() ?? 0).clamp(0, 3),
+      isCore: map['isCore'] as bool? ?? (((map['tier'] as num?)?.toInt() ?? 0) == 1 || ((map['tier'] as num?)?.toInt() ?? 0) == 0),
       history: history,
     );
   }
@@ -138,8 +144,10 @@ class Habit {
     String? reminderTime,
     bool clearReminder = false,
     int? tier,
+    bool? isCore,
     Map<String, int>? history,
   }) {
+    final effectiveCore = isCore ?? (tier != null ? tier == 1 : this.isCore);
     return Habit(
       id: id,
       name: name ?? this.name,
@@ -153,7 +161,8 @@ class Habit {
       archived: archived ?? this.archived,
       sortOrder: sortOrder ?? this.sortOrder,
       reminderTime: clearReminder ? null : (reminderTime ?? this.reminderTime),
-      tier: tier ?? this.tier,
+      tier: tier ?? (effectiveCore ? 1 : (this.tier == 1 ? 0 : this.tier)),
+      isCore: effectiveCore,
       history: history ?? this.history,
     );
   }

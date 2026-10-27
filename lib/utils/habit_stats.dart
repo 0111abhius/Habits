@@ -154,4 +154,46 @@ class HabitStats {
     if (habit.frequency == HabitFrequency.daily) return true;
     return !weekMet(habit, date) || isDoneOn(habit, date);
   }
+
+  /// Computes a daily score (0–100) based on Core and Bonus habits.
+  ///
+  /// - When both Core and Bonus habits exist: Core habits account for 70 points
+  ///   and Bonus habits account for 30 points.
+  /// - When only Core habits exist: Core habits account for 100 points.
+  /// - When only Bonus habits exist: Bonus habits account for 100 points.
+  /// - Returns 0 if there are no habits due.
+  static int habitScoreOn(List<Habit> habits, DateTime date) {
+    final active = habits.where((h) => !h.archived && isDueOn(h, date)).toList();
+    if (active.isEmpty) return 0;
+
+    final core = active.where((h) => h.isCore).toList();
+    final bonus = active.where((h) => !h.isCore).toList();
+
+    final coreDone = core.where((h) => isDoneOn(h, date)).length;
+    final bonusDone = bonus.where((h) => isDoneOn(h, date)).length;
+
+    if (core.isNotEmpty && bonus.isNotEmpty) {
+      final corePts = 70.0 * coreDone / core.length;
+      final bonusPts = 30.0 * bonusDone / bonus.length;
+      return (corePts + bonusPts).round().clamp(0, 100);
+    } else if (core.isNotEmpty) {
+      return ((100.0 * coreDone) / core.length).round().clamp(0, 100);
+    } else {
+      return ((100.0 * bonusDone) / bonus.length).round().clamp(0, 100);
+    }
+  }
+
+  /// Average daily habit score over the last [days] days ending [today].
+  static int averageScore(List<Habit> habits, DateTime today, {int days = 7}) {
+    if (habits.isEmpty || days <= 0) return 0;
+    int total = 0;
+    int counted = 0;
+    final day = dayOnly(today);
+    for (int i = 0; i < days; i++) {
+      final d = day.subtract(Duration(days: i));
+      total += habitScoreOn(habits, d);
+      counted++;
+    }
+    return counted == 0 ? 0 : (total / counted).round();
+  }
 }

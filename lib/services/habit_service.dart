@@ -35,12 +35,11 @@ class HabitService {
     });
   }
 
-  /// Tier 1 (protected) habits float to the top; everything else keeps the
-  /// user's manual order.
+  /// Core habits float to the top; everything else keeps the user's manual order.
   static int compareHabits(Habit a, Habit b) {
-    final ta = a.tier == 1 ? 0 : 1;
-    final tb = b.tier == 1 ? 0 : 1;
-    if (ta != tb) return ta.compareTo(tb);
+    final ca = a.isCore ? 0 : 1;
+    final cb = b.isCore ? 0 : 1;
+    if (ca != cb) return ca.compareTo(cb);
     final c = a.sortOrder.compareTo(b.sortOrder);
     return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
   }
@@ -55,12 +54,13 @@ class HabitService {
   Future<Habit> addHabit({
     required String uid,
     required String name,
-    required HabitType type,
-    required HabitFrequency frequency,
+    HabitType type = HabitType.binary,
+    HabitFrequency frequency = HabitFrequency.daily,
     int weeklyTarget = 3,
     int targetCount = 1,
     String? reminderTime,
     int? sortOrder,
+    bool isCore = true,
   }) async {
     final ref = _habitsColl(uid).doc();
     final habit = Habit(
@@ -74,6 +74,7 @@ class HabitService {
       createdAt: DateTime.now(),
       sortOrder: sortOrder ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
       reminderTime: reminderTime,
+      isCore: isCore,
     );
     await ref.set({...habit.toMap(), 'historyMigrated': true});
     return habit;
@@ -83,6 +84,15 @@ class HabitService {
     final map = habit.toMap()..remove('history')..remove('completedDates')..remove('createdAt');
     await _habitsColl(uid).doc(habit.id).set(map, SetOptions(merge: true));
   }
+
+  Future<void> toggleCore(String uid, Habit habit) =>
+      updateHabit(uid, habit.copyWith(isCore: !habit.isCore));
+
+  Future<void> renameHabit(String uid, Habit habit, String newName) =>
+      updateHabit(uid, habit.copyWith(name: newName.trim()));
+
+  Future<void> restoreHabit(String uid, Habit habit) =>
+      _habitsColl(uid).doc(habit.id).set(habit.toMap());
 
   Future<void> setArchived(String uid, String habitId, bool archived) =>
       _habitsColl(uid).doc(habitId).set({'archived': archived}, SetOptions(merge: true));

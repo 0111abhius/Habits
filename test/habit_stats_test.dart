@@ -7,6 +7,7 @@ Habit _habit({
   HabitFrequency frequency = HabitFrequency.daily,
   int weeklyTarget = 3,
   int targetCount = 1,
+  bool isCore = true,
   Map<String, int> history = const {},
   DateTime? createdAt,
 }) {
@@ -19,6 +20,7 @@ Habit _habit({
     targetCount: targetCount,
     userId: 'u',
     createdAt: createdAt ?? DateTime(2024, 1, 1),
+    isCore: isCore,
     history: history,
   );
 }
@@ -161,6 +163,52 @@ void main() {
 
     test('daily habits are always due', () {
       expect(HabitStats.isDueOn(_habit(), today), isTrue);
+    });
+  });
+
+  group('habitScoreOn & averageScore', () {
+    test('returns 0 when empty or no due habits', () {
+      expect(HabitStats.habitScoreOn([], today), 0);
+    });
+
+    test('100% when all core habits done (no bonus)', () {
+      final h1 = _habit(isCore: true, history: {'2024-06-12': 1});
+      final h2 = _habit(isCore: true, history: {'2024-06-12': 1});
+      expect(HabitStats.habitScoreOn([h1, h2], today), 100);
+    });
+
+    test('partial core score when only core habits exist', () {
+      final h1 = _habit(isCore: true, history: {'2024-06-12': 1});
+      final h2 = _habit(isCore: true, history: {});
+      expect(HabitStats.habitScoreOn([h1, h2], today), 50);
+    });
+
+    test('weights core 70% and bonus 30%', () {
+      final c1 = _habit(isCore: true, history: {'2024-06-12': 1});
+      final c2 = _habit(isCore: true, history: {'2024-06-12': 1});
+      final b1 = _habit(isCore: false, history: {'2024-06-12': 1});
+      final b2 = _habit(isCore: false, history: {});
+
+      // All core done (70 pts) + 1 of 2 bonus done (15 pts) = 85 pts
+      expect(HabitStats.habitScoreOn([c1, c2, b1, b2], today), 85);
+
+      // All core done + all bonus done = 100 pts
+      final b2Done = _habit(isCore: false, history: {'2024-06-12': 1});
+      expect(HabitStats.habitScoreOn([c1, c2, b1, b2Done], today), 100);
+
+      // No core done + 1 bonus done = 0 + 15 = 15 pts
+      final c1Undone = _habit(isCore: true, history: {});
+      final c2Undone = _habit(isCore: true, history: {});
+      expect(HabitStats.habitScoreOn([c1Undone, c2Undone, b1, b2], today), 15);
+    });
+
+    test('averageScore calculates rolling score average', () {
+      final h = _habit(isCore: true, history: {
+        '2024-06-11': 1,
+        '2024-06-12': 1,
+      });
+      // 2024-06-10: 0, 06-11: 100, 06-12: 100 -> avg (200 / 3) = 67
+      expect(HabitStats.averageScore([h], today, days: 3), 67);
     });
   });
 }
